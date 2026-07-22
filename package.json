@@ -2,13 +2,13 @@
   "name": "gitlab-version-tracker",
   "version": "1.0.0",
   "description": "Local web app to track default-branch versions across GitLab projects, including git-subtree base sync status.",
-  "main": "server.js",
+  "main": "server/index.js",
   "type": "commonjs",
   "engines": {
     "node": ">=18"
   },
   "scripts": {
-    "start": "node server.js",
+    "start": "node server/index.js",
     "dev:client": "vite --host",
     "build": "vite build",
     "dev": "npm run build && npm start"
