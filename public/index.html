@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Version Board</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">◈</span>
+        <div>
+          <h1>Version Board</h1>
+          <p class="subtitle">Default-branch status across your GitLab projects</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <span id="connStatus" class="conn-status">not connected</span>
+        <button id="btnSettings" class="btn btn-ghost">Settings</button>
+        <button id="btnRefresh" class="btn btn-primary">Refresh all</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="emptyState" class="empty-state hidden">
+        <p>No projects configured yet.</p>
+        <button id="btnAddFirst" class="btn btn-primary">Add your first project</button>
+      </section>
+
+      <section id="board" class="board hidden"></section>
+    </main>
+  </div>
+
+  <!-- Settings drawer -->
+  <div id="settingsOverlay" class="overlay hidden">
+    <div class="drawer">
+      <div class="drawer-head">
+        <h2>Settings</h2>
+        <button id="btnCloseSettings" class="btn btn-ghost btn-icon">✕</button>
+      </div>
+
+      <div class="drawer-body">
+        <fieldset class="field-group">
+          <legend>GitLab connection</legend>
+          <label>GitLab base URL
+            <input id="gitlabUrl" type="text" placeholder="https://gitlab-01.f1soft.com" />
+          </label>
+          <label>Personal Access Token
+            <input id="gitlabToken" type="password" placeholder="glpat-xxxxxxxxxxxx" />
+          </label>
+          <label class="checkbox-label">
+            <input id="rememberToken" type="checkbox" />
+            Remember on this machine (stored in browser localStorage)
+          </label>
+          <div class="field-row">
+            <button id="btnTestConn" class="btn btn-secondary">Test connection</button>
+            <span id="testConnResult" class="test-result"></span>
+          </div>
+        </fieldset>
+
+        <fieldset class="field-group">
+          <legend>package.json path (optional)</legend>
+          <label>Path within repo used to read a "version" field
+            <input id="packageJsonPath" type="text" placeholder="package.json" />
+          </label>
+        </fieldset>
+
+        <fieldset class="field-group">
+          <legend>Projects</legend>
+          <div id="projectList" class="project-list"></div>
+          <button id="btnAddProject" class="btn btn-secondary">+ Add project</button>
+        </fieldset>
+      </div>
+
+      <div class="drawer-foot">
+        <button id="btnSaveSettings" class="btn btn-primary">Save &amp; close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Project row template -->
+  <template id="projectRowTpl">
+    <div class="project-row" data-idx="">
+      <div class="project-row-main">
+        <input class="p-name" type="text" placeholder="Display name (e.g. Prabhu Bank - BankXP)" />
+        <input class="p-path" type="text" placeholder="namespace/project-path (e.g. fonebank/prabhu-bankxp)" />
+      </div>
+      <div class="project-row-type">
+        <label class="radio-label">
+          <input type="radio" name="type" class="p-type" value="normal" checked /> Normal
+        </label>
+        <label class="radio-label">
+          <input type="radio" name="type" class="p-type" value="subtree" /> Has subtree base
+        </label>
+      </div>
+      <div class="project-row-subtree hidden">
+        <input class="p-subtreePath" type="text" placeholder="Subtree prefix (e.g. projects/base-client/)" />
+        <input class="p-basePath" type="text" placeholder="Base project path (e.g. fonebank/banksmart-client-web)" />
+      </div>
+      <button class="btn btn-ghost btn-icon p-remove" title="Remove">🗑</button>
+    </div>
+  </template>
+
+    <template id="projectRowTpl">
+    <div class="project-row" data-idx="">
+      <div class="project-row-main">
+        <input class="p-name" type="text" placeholder="Display name (e.g. Prabhu Bank - BankXP)" />
+        <input class="p-path" type="text" placeholder="namespace/project-path (e.g. fonebank/prabhu-bankxp)" />
+      </div>
+      <button class="btn btn-ghost btn-icon p-remove" title="Remove">🗑</button>
+    </div>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
