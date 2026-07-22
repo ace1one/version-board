@@ -319,7 +319,10 @@ const path = require('path');
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Serve React app static files (built output)
+const reactDist = path.join(__dirname, 'client', 'dist');
+app.use(express.static(reactDist));
 
 const PORT = process.env.PORT || 4545;
 
@@ -596,6 +599,11 @@ app.post('/api/check-all', async (req, res) => {
   }));
 
   res.json({ results });
+});
+
+// Catch-all for React SPA routing - serve index.html for any non-API routes
+app.get('*', (req, res) => {
+  res.sendFile(path.join(reactDist, 'index.html'));
 });
 
 app.listen(PORT, () => {
