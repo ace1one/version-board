@@ -1,9 +1,16 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { fmtDate } from '../utils/helpers';
 
-export default function DetailView({ results }) {
+export default function DetailView({ config, results }) {
   const { key } = useParams();
+  const [activeTab, setActiveTab] = useState('details');
+  const [mergeRequests, setMergeRequests] = useState([]);
+  const [issues, setIssues] = useState([]);
+  const [mrLoading, setMrLoading] = useState(false);
+  const [issuesLoading, setIssuesLoading] = useState(false);
+  const [mrError, setMrError] = useState('');
+  const [issuesError, setIssuesError] = useState('');
 
   // Try from state first, fall back to sessionStorage
   let allResults = results;
@@ -16,6 +23,56 @@ export default function DetailView({ results }) {
   }
 
   const match = allResults.find((r) => r.key === key);
+
+  // Fetch MRs when tab is activated
+  useEffect(() => {
+    if (activeTab === 'mr' && match && match.ok) {
+      setMrLoading(true);
+      setMrError('');
+      fetch('/api/project-merge-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gitlabUrl: config.gitlabUrl,
+          token: config.token,
+          projectPath: match.key,
+          state: 'opened',
+        }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.error) throw new Error(data.error);
+          setMergeRequests(data.mergeRequests || []);
+        })
+        .catch((e) => setMrError(e.message))
+        .finally(() => setMrLoading(false));
+    }
+  }, [activeTab, match?.key, match?.ok, config.gitlabUrl, config.token]);
+
+  // Fetch Issues when tab is activated
+  useEffect(() => {
+    if (activeTab === 'issues' && match && match.ok) {
+      setIssuesLoading(true);
+      setIssuesError('');
+      fetch('/api/project-issues', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gitlabUrl: config.gitlabUrl,
+          token: config.token,
+          projectPath: match.key,
+          state: 'opened',
+        }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.error) throw new Error(data.error);
+          setIssues(data.issues || []);
+        })
+        .catch((e) => setIssuesError(e.message))
+        .finally(() => setIssuesLoading(false));
+    }
+  }, [activeTab, match?.key, match?.ok, config.gitlabUrl, config.token]);
 
   if (!match) {
     return (
@@ -36,9 +93,7 @@ export default function DetailView({ results }) {
           <div className="detail-content">
             <div className="card status-error">
               <p className="error-text">
-                No cached data for this project. Go back to the board and hit "Refresh all" first,
-                then open "View details" again — this page reads from the last refresh, it doesn't
-                re-query GitLab itself.
+                Project not found. Go back and refresh.
               </p>
             </div>
           </div>
@@ -46,6 +101,12 @@ export default function DetailView({ results }) {
       </div>
     );
   }
+
+  const tabs = [
+    { id: 'details', label: '📋 Details', count: null },
+    { id: 'mr', label: '🔀 Merge Requests', count: mergeRequests.length },
+    { id: 'issues', label: '🐛 Issues', count: issues.length },
+  ];
 
   return (
     <div className="app">
@@ -63,14 +124,31 @@ export default function DetailView({ results }) {
       </header>
       <main>
         <div className="detail-content">
-          {!match.ok ? (
+          <div className="detail-tabs">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                className={`detail-tab ${activeTab === tab.id ? 'active' : ''}`}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                {tab.label}
+                {tab.count != null && tab.count >= 0 && (
+                  <span className="tab-badge">{tab.count}</span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {activeTab === 'details' && !match.ok && (
             <div className="card status-error">
               <p className="error-text">{match.error}</p>
             </div>
-          ) : (
+          )}
+
+          {activeTab === 'details' && match.ok && (
             <>
               <div className="card status-ok detail-card">
-                <div className="subtree-title">Project</div>
+                <div className="subtree-title">Project Information</div>
                 <DataRow label="Branch" value={match.defaultBranch || '—'} />
                 <DataRow label="Latest commit" value={match.commitFullSha || match.commitSha || '—'} />
                 <DataRow label="Commit date" value={fmtDate(match.commitDate)} dim />
@@ -84,6 +162,74 @@ export default function DetailView({ results }) {
               </div>
               {match.subtree && <SubtreeDetail subtree={match.subtree} />}
             </>
+          )}
+
+          {activeTab === 'mr' && match.ok && (
+            <div className="card detail-card">
+              <div className="subtree-title">Open Merge Requests</div>
+              {mrLoading && <div className="tab-loading">Loading merge requests...</div>}
+              {mrError && <p className="error-text">{mrError}</p>}
+              {!mrLoading && !mrError && mergeRequests.length === 0 && (
+                <div className="tab-empty">No open merge requests</div>
+              )}
+              {!mrLoading && mergeRequests.map((mr) => (
+                <a key={mr.id} href={mr.webUrl} target="_blank" rel="noopener" className="list-item">
+                  <div className="list-item-head">
+                    <span className="list-item-title">{mr.title}</span>
+                    <span className={`state-badge ${mr.state === 'merged' ? 'merged' : mr.state === 'closed' ? 'closed' : 'opened'}`}>
+                      {mr.state}
+                    </span>
+                  </div>
+                  <div className="list-item-meta">
+                    <span>#{mr.id}</span>
+                    <span>{mr.sourceBranch} → {mr.targetBranch}</span>
+                    <span>by {mr.author}</span>
+                    <span>{fmtDate(mr.updatedAt)}</span>
+                  </div>
+                  {mr.labels.length > 0 && (
+                    <div className="label-list">
+                      {mr.labels.map((l, i) => (
+                        <span key={i} className="label-pill">{l}</span>
+                      ))}
+                    </div>
+                  )}
+                </a>
+              ))}
+            </div>
+          )}
+
+          {activeTab === 'issues' && match.ok && (
+            <div className="card detail-card">
+              <div className="subtree-title">Open Issues</div>
+              {issuesLoading && <div className="tab-loading">Loading issues...</div>}
+              {issuesError && <p className="error-text">{issuesError}</p>}
+              {!issuesLoading && !issuesError && issues.length === 0 && (
+                <div className="tab-empty">No open issues 🎉</div>
+              )}
+              {!issuesLoading && issues.map((issue) => (
+                <a key={issue.id} href={issue.webUrl} target="_blank" rel="noopener" className="list-item">
+                  <div className="list-item-head">
+                    <span className="list-item-title">{issue.title}</span>
+                    <span className={`state-badge ${issue.state === 'closed' ? 'closed' : 'opened'}`}>
+                      {issue.state}
+                    </span>
+                  </div>
+                  <div className="list-item-meta">
+                    <span>#{issue.id}</span>
+                    {issue.assignees.length > 0 && <span>→ {issue.assignees.join(', ')}</span>}
+                    <span>by {issue.author}</span>
+                    <span>{fmtDate(issue.updatedAt)}</span>
+                  </div>
+                  {issue.labels.length > 0 && (
+                    <div className="label-list">
+                      {issue.labels.map((l, i) => (
+                        <span key={i} className="label-pill">{l}</span>
+                      ))}
+                    </div>
+                  )}
+                </a>
+              ))}
+            </div>
           )}
         </div>
       </main>

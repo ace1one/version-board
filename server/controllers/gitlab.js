@@ -144,6 +144,7 @@ async function checkAll(req, res) {
       const out = {
         ...base,
         ok: true,
+        gitlabProjectId: info.id,
         webUrl: info.web_url,
         defaultBranch: ref,
         commitSha: commit ? commit.short_id : null,
@@ -173,4 +174,77 @@ async function checkAll(req, res) {
   res.json({ results });
 }
 
-module.exports = { testConnection, checkAll };
+async function listProjects(req, res) {
+  const { gitlabUrl, token, search } = req.body;
+  try {
+    const projects = await gitlabApi.listProjects(gitlabUrl, token, search);
+    res.json({
+      projects: projects.map((p) => ({
+        id: p.id,
+        name: p.name_with_owner || p.name || 'Unknown',
+        path: p.path_with_namespace || p.path || '',
+        webUrl: p.web_url || '',
+        description: p.description || '',
+        visibility: p.visibility || 'private',
+        stars: p.star_count || 0,
+        lastActivity: p.last_activity_at,
+      })),
+    });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
+}
+
+async function getProjectMergeRequests(req, res) {
+  const { gitlabUrl, token, projectPath, state } = req.body;
+  try {
+    const info = await gitlabApi.getProjectInfo(gitlabUrl, token, projectPath);
+    const mrs = await gitlabApi.getMergeRequests(gitlabUrl, token, info.id, state || 'opened');
+    res.json({
+      mergeRequests: mrs.map((mr) => ({
+        id: mr.iid,
+        title: mr.title,
+        state: mr.state,
+        author: mr.author?.name || 'Unknown',
+        authorAvatar: mr.author?.avatar_url || '',
+        createdAt: mr.created_at,
+        updatedAt: mr.updated_at,
+        webUrl: mr.web_url,
+        sourceBranch: mr.source_branch,
+        targetBranch: mr.target_branch,
+        labels: mr.labels || [],
+        reviews: mr.reviews_state || '',
+      })),
+    });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
+}
+
+async function getProjectIssues(req, res) {
+  const { gitlabUrl, token, projectPath, state } = req.body;
+  try {
+    const info = await gitlabApi.getProjectInfo(gitlabUrl, token, projectPath);
+    const issues = await gitlabApi.getIssues(gitlabUrl, token, info.id, state || 'opened');
+    res.json({
+      issues: issues.map((issue) => ({
+        id: issue.iid,
+        title: issue.title,
+        state: issue.state,
+        author: issue.author?.name || 'Unknown',
+        authorAvatar: issue.author?.avatar_url || '',
+        assignees: (issue.assignees || []).map((a) => a.name),
+        createdAt: issue.created_at,
+        updatedAt: issue.updated_at,
+        webUrl: issue.web_url,
+        labels: issue.labels || [],
+        priority: issue.priority || null,
+        severity: issue.severity || null,
+      })),
+    });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
+}
+
+module.exports = { testConnection, checkAll, listProjects, getProjectMergeRequests, getProjectIssues };

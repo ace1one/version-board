@@ -92,6 +92,68 @@ button {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* ---------- Search Box ---------- */
+
+.search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: 10px;
+  font-size: 13px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.search-input {
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 8px 32px 8px 32px;
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: 13px;
+  width: 200px;
+  transition: border-color 0.15s ease, width 0.2s ease;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  /* width: 260px; */
+}
+
+.search-input::placeholder {
+  color: var(--text-faint);
+}
+
+.search-clear {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 4px;
+  line-height: 1;
+}
+
+.search-clear:hover {
+  color: var(--text);
+}
+
+.result-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  padding: 4px 8px;
 }
 
 .conn-status {
@@ -150,6 +212,62 @@ button {
 .btn-icon {
   padding: 6px 10px;
   font-size: 14px;
+}
+
+.btn-large {
+  padding: 14px 28px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* ---------- Empty State (Enhanced) ---------- */
+
+.empty-icon {
+  font-size: 48px;
+  color: var(--accent);
+  text-shadow: 0 0 30px rgba(79, 209, 165, 0.4);
+  margin-bottom: 16px;
+}
+
+.empty-title {
+  font-size: 22px;
+  font-weight: 800;
+  margin: 0 0 8px;
+  color: var(--text);
+}
+
+.empty-state p {
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.empty-hint {
+  font-size: 12px !important;
+  color: var(--text-faint) !important;
+}
+
+.empty-features {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  margin: 24px 0;
+  flex-wrap: wrap;
+}
+
+.empty-feature {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 8px 14px;
+  background: var(--panel);
+  border-radius: 8px;
+  border: 1px solid var(--hairline);
+}
+
+.empty-feature-icon {
+  font-size: 16px;
 }
 
 /* ---------- Empty state ---------- */
@@ -570,7 +688,317 @@ button {
 }
 .subtree-detail-btn:hover { background: #63dcb2; }
 
+/* ---------- Add Project Actions ---------- */
+
+.add-project-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.add-project-actions .btn {
+  flex: 1;
+}
+
+/* ---------- Browse Repos ---------- */
+
+.browse-repos {
+  margin-top: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.browse-search-box {
+  position: relative;
+  padding: 10px 12px;
+  background: var(--panel-raised);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.browse-search-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  padding: 9px 10px 9px 32px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.browse-search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.browse-loading,
+.browse-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
+.browse-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.browse-repo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--hairline);
+  transition: background 0.1s ease;
+}
+
+.browse-repo:last-child {
+  border-bottom: none;
+}
+
+.browse-repo:hover {
+  background: var(--panel-raised);
+}
+
+.browse-repo.already-added {
+  opacity: 0.5;
+}
+
+.browse-repo-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.browse-repo-name {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.browse-repo-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.browse-repo-desc {
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visibility-badge {
+  font-size: 9px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.visibility-badge.public {
+  color: var(--accent);
+  background: rgba(79, 209, 165, 0.1);
+}
+
+.visibility-badge.private {
+  color: var(--warn);
+  background: rgba(232, 163, 61, 0.1);
+}
+
+.visibility-badge.internal {
+  color: var(--text-muted);
+  background: rgba(139, 152, 160, 0.1);
+}
+
+.btn-add-repo {
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  color: #06231A;
+  flex-shrink: 0;
+}
+
+.btn-add-repo:hover {
+  background: #63dcb2;
+}
+
+.already-badge {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* ---------- Detail Tabs ---------- */
+
+.detail-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 4px;
+}
+
+.detail-tab {
+  flex: 1;
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  color: var(--text-muted);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.detail-tab:hover {
+  background: var(--panel-raised);
+  color: var(--text);
+}
+
+.detail-tab.active {
+  background: var(--accent);
+  color: #06231A;
+}
+
+.tab-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.15);
+  font-weight: 700;
+}
+
+.detail-tab.active .tab-badge {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* ---------- List Items (MRs, Issues) ---------- */
+
+.tab-loading,
+.tab-empty {
+  padding: 30px 20px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 14px;
+}
+
+.tab-empty {
+  padding: 40px 20px;
+}
+
+.list-item {
+  display: block;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--hairline);
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.1s ease;
+}
+
+.list-item:last-child {
+  border-bottom: none;
+}
+
+.list-item:hover {
+  background: var(--panel-raised);
+  margin: 0 -12px;
+  padding: 14px 12px;
+  border-radius: 8px;
+}
+
+.list-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.list-item-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+}
+
+.state-badge {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-weight: 700;
+  text-transform: capitalize;
+  flex-shrink: 0;
+}
+
+.state-badge.opened {
+  color: var(--accent);
+  background: rgba(79, 209, 165, 0.1);
+}
+
+.state-badge.merged {
+  color: #7c6cf0;
+  background: rgba(124, 108, 240, 0.1);
+}
+
+.state-badge.closed {
+  color: var(--text-faint);
+  background: rgba(92, 104, 112, 0.15);
+}
+
+.list-item-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  flex-wrap: wrap;
+}
+
+.label-list {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.label-pill {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: var(--panel-raised);
+  color: var(--text-muted);
+  border: 1px solid var(--hairline);
+  font-weight: 600;
+}
+
+/* ---------- Responsive ---------- */
+
 @media (max-width: 560px) {
   .board { grid-template-columns: 1fr; }
   .topbar { flex-direction: column; align-items: flex-start; }
+  .topbar-actions { flex-direction: column; align-items: stretch; }
+  .search-input { width: 100% !important; }
+  .search-input:focus { width: 100% !important; }
+  .detail-tabs { flex-direction: column; }
+  .empty-features { flex-direction: column; align-items: center; }
+  .list-item-meta { flex-direction: column; gap: 4px; }
 }

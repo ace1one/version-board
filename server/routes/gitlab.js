@@ -6,5 +6,8 @@ const gitlabController = require('../controllers/gitlab');
 
 router.post('/test-connection', gitlabController.testConnection);
 router.post('/check-all', gitlabController.checkAll);
+router.post('/list-projects', gitlabController.listProjects);
+router.post('/project-merge-requests', gitlabController.getProjectMergeRequests);
+router.post('/project-issues', gitlabController.getProjectIssues);
 
 module.exports = router;

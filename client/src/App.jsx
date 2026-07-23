@@ -22,6 +22,19 @@ export default function App() {
   const [connStatus, setConnStatus] = useState('');
   const [connStatusClass, setConnStatusClass] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Filter results based on search query
+  const filteredResults = results.filter((r) => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      (r.label || '').toLowerCase().includes(q) ||
+      (r.key || '').toLowerCase().includes(q) ||
+      (r.packageVersion || '').toLowerCase().includes(q) ||
+      (r.latestTag || '').toLowerCase().includes(q)
+    );
+  });
 
   // Auto-open settings on first run
   useEffect(() => {
@@ -80,7 +93,7 @@ export default function App() {
   const handleOpenSettings = () => setSettingsOpen(true);
   const handleCloseSettings = () => setSettingsOpen(false);
 
-  const showEmpty = !config.gitlabUrl || config.projects.length === 0 || results.length === 0;
+  const showEmpty = !config.gitlabUrl || config.projects.length === 0 || filteredResults.length === 0;
 
   return (
     <BrowserRouter>
@@ -92,12 +105,15 @@ export default function App() {
               connStatusClass={connStatusClass}
               onSettings={handleOpenSettings}
               onRefresh={refreshAll}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              resultCount={filteredResults.length}
             />
             <main>
               {showEmpty && (
-                <EmptyState onAddFirst={handleOpenSettings} />
+                <EmptyState onAddFirst={handleOpenSettings} isSearch={!searchQuery ? false : true} />
               )}
-              {!showEmpty && <Board results={results} />}
+              {!showEmpty && <Board results={filteredResults} />}
             </main>
             {settingsOpen && (
               <SettingsDrawer

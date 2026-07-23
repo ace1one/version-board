@@ -94,6 +94,42 @@ async function getTags(gitlabUrl, token, projectId, page, perPage = 100) {
   );
 }
 
+async function listProjects(gitlabUrl, token, search, page = 1, perPage = 20) {
+  const params = new URLSearchParams({
+    page,
+    per_page: perPage,
+    membership: true,
+    order_by: 'last_activity_at',
+    sort: 'desc',
+  });
+  if (search) params.set('search', search);
+  return gitlabGet(
+    gitlabUrl, token,
+    `/projects?${params.toString()}`
+  );
+}
+
+async function getMergeRequests(gitlabUrl, token, projectId, state = 'opened', page = 1, perPage = 10) {
+  return gitlabGet(
+    gitlabUrl, token,
+    `/projects/${projectId}/merge_requests?state=${state}&order_by=updated_at&sort=desc&per_page=${perPage}&page=${page}`
+  );
+}
+
+async function getIssues(gitlabUrl, token, projectId, state = 'opened', page = 1, perPage = 10) {
+  return gitlabGet(
+    gitlabUrl, token,
+    `/projects/${projectId}/issues?state=${state}&order_by=updated_at&sort=desc&per_page=${perPage}&page=${page}`
+  );
+}
+
+async function getRecentActivity(gitlabUrl, token, projectId, perPage = 10) {
+  return gitlabGet(
+    gitlabUrl, token,
+    `/projects/${projectId}/events?action=pushed_event&per_page=${perPage}`
+  );
+}
+
 module.exports = {
   getCurrentUser,
   getProjectInfo,
@@ -104,4 +140,8 @@ module.exports = {
   getCommitsByPath,
   compareCommits,
   getTags,
+  listProjects,
+  getMergeRequests,
+  getIssues,
+  getRecentActivity,
 };
