@@ -199,10 +199,10 @@ async function listProjects(req, res) {
 }
 
 async function getProjectMergeRequests(req, res) {
-  const { gitlabUrl, token, projectPath, state } = req.body;
+  const { gitlabUrl, token, projectPath, projectId, state } = req.body;
   try {
-    const info = await gitlabApi.getProjectInfo(gitlabUrl, token, projectPath);
-    const mrs = await gitlabApi.getMergeRequests(gitlabUrl, token, info.id, state || 'opened');
+    const pId = projectId || (await gitlabApi.getProjectInfo(gitlabUrl, token, projectPath)).id;
+    const mrs = await gitlabApi.getMergeRequests(gitlabUrl, token, pId, state || 'opened');
     res.json({
       mergeRequests: mrs.map((mr) => ({
         id: mr.iid,
@@ -210,6 +210,9 @@ async function getProjectMergeRequests(req, res) {
         state: mr.state,
         author: mr.author?.name || 'Unknown',
         authorAvatar: mr.author?.avatar_url || '',
+        assignee: mr.assignee ? { id: mr.assignee.id, name: mr.assignee.name, username: mr.assignee.username, avatarUrl: mr.assignee.avatar_url } : null,
+        assignees: (mr.assignees || []).map((a) => ({ id: a.id, name: a.name, username: a.username, avatarUrl: a.avatar_url })),
+        reviewers: (mr.reviewers || []).map((r) => ({ id: r.id, name: r.name, username: r.username, avatarUrl: r.avatar_url })),
         createdAt: mr.created_at,
         updatedAt: mr.updated_at,
         webUrl: mr.web_url,
@@ -217,9 +220,245 @@ async function getProjectMergeRequests(req, res) {
         targetBranch: mr.target_branch,
         labels: mr.labels || [],
         reviews: mr.reviews_state || '',
+        hasConflicts: mr.has_conflicts,
+        detailedMergeStatus: mr.detailed_merge_status,
+        mergeStatus: mr.merge_status,
+        draft: mr.draft || mr.work_in_progress,
       })),
     });
   } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
+}
+
+async function getMergeRequestDetails(req, res) {
+  const { gitlabUrl, token, projectPath, projectId, mrIid } = req.body;
+  try {
+    const pId = projectId || (await gitlabApi.getProjectInfo(gitlabUrl, token, projectPath)).id;
+    const mr = await gitlabApi.getMergeRequestDetails(gitlabUrl, token, pId, mrIid);
+    res.json({
+      mergeRequest: {
+        id: mr.iid,
+        title: mr.title,
+        description: mr.description || '',
+        state: mr.state,
+        author: mr.author?.name || 'Unknown',
+        authorUsername: mr.author?.username || '',
+        authorAvatar: mr.author?.avatar_url || '',
+        assignee: mr.assignee ? { id: mr.assignee.id, name: mr.assignee.name, username: mr.assignee.username, avatarUrl: mr.assignee.avatar_url } : null,
+        assignees: (mr.assignees || []).map((a) => ({ id: a.id, name: a.name, username: a.username, avatarUrl: a.avatar_url })),
+        reviewers: (mr.reviewers || []).map((r) => ({ id: r.id, name: r.name, username: r.username, avatarUrl: r.avatar_url })),
+        createdAt: mr.created_at,
+        updatedAt: mr.updated_at,
+        mergedAt: mr.merged_at,
+        mergedBy: mr.merged_by?.name || null,
+        closedAt: mr.closed_at,
+        webUrl: mr.web_url,
+        sourceBranch: mr.source_branch,
+        targetBranch: mr.target_branch,
+        labels: mr.labels || [],
+        hasConflicts: mr.has_conflicts,
+        detailedMergeStatus: mr.detailed_merge_status,
+        mergeStatus: mr.merge_status,
+        mergeError: mr.merge_error,
+        shouldRemoveSourceBranch: mr.should_remove_source_branch,
+        forceRemoveSourceBranch: mr.force_remove_source_branch,
+        squash: mr.squash,
+        draft: mr.draft || mr.work_in_progress,
+        divergedCommitsCount: mr.diverged_commits_count,
+        changesCount: mr.changes_count,
+        userCanMerge: mr.user?.can_merge !== false,
+      },
+    });
+  } catch (e) {
+    console.error('getMergeRequestDetails error:', e.message);
+    res.status(e.status || 500).json({ error: e.message });
+  }
+}
+
+async function getMergeRequestChanges(req, res) {
+  const { gitlabUrl, token, projectPath, projectId, mrIid } = req.body;
+  try {
+    const pId = projectId || (await gitlabApi.getProjectInfo(gitlabUrl, token, projectPath)).id;
+    const [mrWithChanges, commits] = await Promise.all([
+      gitlabApi.getMergeRequestChanges(gitlabUrl, token, pId, mrIid),
+      gitlabApi.getMergeRequestCommits(gitlabUrl, token, pId, mrIid).catch(() => []),
+    ]);
+
+    const changes = await Promise.all(
+      (mrWithChanges.changes || []).map(async (c) => {
+        let diff = c.diff;
+        // If it's a new file and diff is empty, try to fetch the file content to synthesize diff
+        if (c.new_file && (!diff || !diff.trim()) && mrWithChanges.source_branch) {
+          try {
+            const raw = await gitlabApi.getRawFileContent(gitlabUrl, token, pId, c.new_path, mrWithChanges.source_branch);
+            if (raw && typeof raw === 'string') {
+              const lines = raw.split('\n');
+              diff = `@@ -0,0 +1,${lines.length} @@\n` + lines.map((l) => '+' + l).join('\n');
+            }
+          } catch (err) {
+            // Ignore raw fetch error if binary or missing
+          }
+        }
+        return {
+          oldPath: c.old_path,
+          newPath: c.new_path,
+          aMode: c.a_mode,
+          bMode: c.b_mode,
+          newFile: c.new_file,
+          renamedFile: c.renamed_file,
+          deletedFile: c.deleted_file,
+          diff: diff,
+        };
+      })
+    );
+
+    res.json({
+      changesCount: mrWithChanges.changes_count || changes.length || 0,
+      changes: changes,
+      commits: (commits || []).map((c) => ({
+        id: c.id,
+        shortId: c.short_id,
+        title: c.title,
+        author: c.author_name,
+        date: c.committed_date,
+      })),
+    });
+  } catch (e) {
+    console.error('getMergeRequestChanges error:', e.message);
+    res.status(e.status || 500).json({ error: e.message });
+  }
+}
+
+async function getProjectMembers(req, res) {
+  const { gitlabUrl, token, projectPath, projectId } = req.body;
+  try {
+    const pId = projectId || (await gitlabApi.getProjectInfo(gitlabUrl, token, projectPath)).id;
+    let [members, currentUser] = await Promise.all([
+      gitlabApi.getProjectMembers(gitlabUrl, token, pId).catch(() => []),
+      gitlabApi.getCurrentUser(gitlabUrl, token).catch(() => null),
+    ]);
+
+    // Ensure member list is deduplicated and formatted
+    const memberMap = new Map();
+    (members || []).forEach((m) => {
+      if (m && m.id && !memberMap.has(m.id)) {
+        memberMap.set(m.id, {
+          id: m.id,
+          name: m.name || m.username,
+          username: m.username,
+          avatarUrl: m.avatar_url || '',
+          state: m.state || 'active',
+        });
+      }
+    });
+
+    // If currentUser is valid and not yet in list, also make sure we include them
+    if (currentUser && currentUser.id && !memberMap.has(currentUser.id)) {
+      memberMap.set(currentUser.id, {
+        id: currentUser.id,
+        name: currentUser.name || currentUser.username,
+        username: currentUser.username,
+        avatarUrl: currentUser.avatar_url || '',
+        state: currentUser.state || 'active',
+      });
+    }
+
+    res.json({
+      members: Array.from(memberMap.values()),
+      currentUser: currentUser ? {
+        id: currentUser.id,
+        name: currentUser.name || currentUser.username,
+        username: currentUser.username,
+        avatarUrl: currentUser.avatar_url || '',
+      } : null,
+    });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
+}
+
+async function createProjectMergeRequest(req, res) {
+  const {
+    gitlabUrl,
+    token,
+    projectPath,
+    projectId,
+    sourceBranch,
+    targetBranch,
+    title,
+    description,
+    labels,
+    assigneeId,
+    reviewerIds,
+    removeSourceBranch,
+    squash,
+  } = req.body;
+
+  try {
+    const pId = projectId || (await gitlabApi.getProjectInfo(gitlabUrl, token, projectPath)).id;
+    const payload = {
+      source_branch: sourceBranch,
+      target_branch: targetBranch,
+      title,
+      description: description || '',
+      labels: Array.isArray(labels) ? labels.join(',') : labels || '',
+      remove_source_branch: removeSourceBranch || false,
+      squash: squash || false,
+    };
+    if (assigneeId) payload.assignee_id = assigneeId;
+    if (reviewerIds && reviewerIds.length > 0) payload.reviewer_ids = reviewerIds;
+
+    const mr = await gitlabApi.createMergeRequest(gitlabUrl, token, pId, payload);
+
+    res.json({
+      success: true,
+      mergeRequest: {
+        id: mr.iid,
+        title: mr.title,
+        state: mr.state,
+        webUrl: mr.web_url,
+        sourceBranch: mr.source_branch,
+        targetBranch: mr.target_branch,
+      },
+    });
+  } catch (e) {
+    console.error('createProjectMergeRequest error:', e.message);
+    res.status(e.status || 500).json({ error: e.message });
+  }
+}
+
+async function mergeProjectMergeRequest(req, res) {
+  const {
+    gitlabUrl,
+    token,
+    projectPath,
+    projectId,
+    mrIid,
+    commitMessage,
+    squash,
+    shouldRemoveSourceBranch,
+  } = req.body;
+
+  try {
+    const pId = projectId || (await gitlabApi.getProjectInfo(gitlabUrl, token, projectPath)).id;
+    const mr = await gitlabApi.acceptMergeRequest(gitlabUrl, token, pId, mrIid, {
+      merge_commit_message: commitMessage || undefined,
+      squash: squash != null ? squash : undefined,
+      should_remove_source_branch: shouldRemoveSourceBranch != null ? shouldRemoveSourceBranch : undefined,
+    });
+
+    res.json({
+      success: true,
+      mergeRequest: {
+        id: mr.iid,
+        title: mr.title,
+        state: mr.state,
+        webUrl: mr.web_url,
+      },
+    });
+  } catch (e) {
+    console.error('mergeProjectMergeRequest error:', e.message);
     res.status(e.status || 500).json({ error: e.message });
   }
 }
@@ -278,21 +517,24 @@ async function getProjectBranches(req, res) {
 }
 
 async function getProjectCommits(req, res) {
-  const { gitlabUrl, token, projectPath, projectId, ref } = req.body;
+  const { gitlabUrl, token, projectPath, projectId, ref, page = 1, perPage = 30 } = req.body;
   try {
     const pId = projectId || (await gitlabApi.getProjectInfo(gitlabUrl, token, projectPath)).id;
-    const commits = await gitlabApi.getCommits(gitlabUrl, token, pId, ref);
+    const commits = await gitlabApi.getCommits(gitlabUrl, token, pId, ref, page, perPage);
+    const parsedCommits = (commits || []).map((c) => ({
+      id: c.id,
+      shortId: c.short_id,
+      title: c.title,
+      message: c.message,
+      author: c.author_name,
+      authorEmail: c.author_email,
+      date: c.committed_date,
+      webUrl: c.web_url,
+    }));
     res.json({
-      commits: (commits || []).map((c) => ({
-        id: c.id,
-        shortId: c.short_id,
-        title: c.title,
-        message: c.message,
-        author: c.author_name,
-        authorEmail: c.author_email,
-        date: c.committed_date,
-        webUrl: c.web_url,
-      })),
+      commits: parsedCommits,
+      page: Number(page),
+      hasMore: Array.isArray(commits) && commits.length >= Number(perPage),
     });
   } catch (e) {
     console.error('getProjectCommits error:', e.message);
@@ -342,7 +584,7 @@ async function getBranchStatus(req, res) {
     ]);
 
     const result = {
-      defaultBranch: ref,
+      ref,
       commitSha: commit ? commit.short_id : null,
       commitFullSha: commit ? commit.id : null,
       commitDate: commit ? commit.committed_date : null,
@@ -372,6 +614,11 @@ module.exports = {
   checkAll,
   listProjects,
   getProjectMergeRequests,
+  getMergeRequestDetails,
+  getMergeRequestChanges,
+  getProjectMembers,
+  createProjectMergeRequest,
+  mergeProjectMergeRequest,
   getProjectIssues,
   getProjectBranches,
   getProjectCommits,

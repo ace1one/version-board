@@ -27,6 +27,44 @@ async function gitlabGetRawText(gitlabUrl, token, apiPath) {
   return res.text();
 }
 
+async function gitlabPost(gitlabUrl, token, apiPath, body) {
+  const url = `${cleanBaseUrl(gitlabUrl)}/api/v4${apiPath}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'PRIVATE-TOKEN': token,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body || {}),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    const err = new Error(`GitLab API ${res.status} for ${apiPath}: ${text.slice(0, 300)}`);
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
+async function gitlabPut(gitlabUrl, token, apiPath, body) {
+  const url = `${cleanBaseUrl(gitlabUrl)}/api/v4${apiPath}`;
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      'PRIVATE-TOKEN': token,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body || {}),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    const err = new Error(`GitLab API ${res.status} for ${apiPath}: ${text.slice(0, 300)}`);
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
 // --- Convenience wrappers ---
 
 async function getCurrentUser(gitlabUrl, token) {
@@ -136,10 +174,48 @@ async function listProjects(gitlabUrl, token, search, page = 1, perPage = 20) {
   );
 }
 
-async function getMergeRequests(gitlabUrl, token, projectId, state = 'opened', page = 1, perPage = 10) {
+async function getMergeRequests(gitlabUrl, token, projectId, state = 'opened', page = 1, perPage = 15) {
+  const stateQuery = state && state !== 'all' ? `&state=${encodeURIComponent(state)}` : '';
   return gitlabGet(
     gitlabUrl, token,
-    `/projects/${encodeURIComponent(projectId)}/merge_requests?state=${state}&order_by=updated_at&sort=desc&per_page=${perPage}&page=${page}`
+    `/projects/${encodeURIComponent(projectId)}/merge_requests?order_by=updated_at&sort=desc&per_page=${perPage}&page=${page}${stateQuery}`
+  );
+}
+
+async function getMergeRequestDetails(gitlabUrl, token, projectId, mrIid) {
+  return gitlabGet(
+    gitlabUrl, token,
+    `/projects/${encodeURIComponent(projectId)}/merge_requests/${encodeURIComponent(mrIid)}?include_diverged_commits_count=true&render_html=true`
+  );
+}
+
+async function getMergeRequestChanges(gitlabUrl, token, projectId, mrIid) {
+  return gitlabGet(
+    gitlabUrl, token,
+    `/projects/${encodeURIComponent(projectId)}/merge_requests/${encodeURIComponent(mrIid)}/changes`
+  );
+}
+
+async function getMergeRequestCommits(gitlabUrl, token, projectId, mrIid) {
+  return gitlabGet(
+    gitlabUrl, token,
+    `/projects/${encodeURIComponent(projectId)}/merge_requests/${encodeURIComponent(mrIid)}/commits`
+  );
+}
+
+async function createMergeRequest(gitlabUrl, token, projectId, data) {
+  return gitlabPost(
+    gitlabUrl, token,
+    `/projects/${encodeURIComponent(projectId)}/merge_requests`,
+    data
+  );
+}
+
+async function acceptMergeRequest(gitlabUrl, token, projectId, mrIid, data = {}) {
+  return gitlabPut(
+    gitlabUrl, token,
+    `/projects/${encodeURIComponent(projectId)}/merge_requests/${encodeURIComponent(mrIid)}/merge`,
+    data
   );
 }
 
@@ -147,6 +223,61 @@ async function getIssues(gitlabUrl, token, projectId, state = 'opened', page = 1
   return gitlabGet(
     gitlabUrl, token,
     `/projects/${encodeURIComponent(projectId)}/issues?state=${state}&order_by=updated_at&sort=desc&per_page=${perPage}&page=${page}`
+  );
+}
+
+async function getProjectMembers(gitlabUrl, token, projectId) {
+  // 1. Try project users endpoint (returns all users with project access)
+  try {
+    const users = await gitlabGet(
+      gitlabUrl, token,
+      `/projects/${encodeURIComponent(projectId)}/users?per_page=100`
+    );
+    if (Array.isArray(users) && users.length > 0) return users;
+  } catch (e) {
+    // continue fallback
+  }
+
+  // 2. Try inherited + direct members endpoint
+  try {
+    const membersAll = await gitlabGet(
+      gitlabUrl, token,
+      `/projects/${encodeURIComponent(projectId)}/members/all?per_page=100`
+    );
+    if (Array.isArray(membersAll) && membersAll.length > 0) return membersAll;
+  } catch (e) {
+    // continue fallback
+  }
+
+  // 3. Try direct members endpoint
+  try {
+    const directMembers = await gitlabGet(
+      gitlabUrl, token,
+      `/projects/${encodeURIComponent(projectId)}/members?per_page=100`
+    );
+    if (Array.isArray(directMembers) && directMembers.length > 0) return directMembers;
+  } catch (e) {
+    // continue fallback
+  }
+
+  // 4. Try global users endpoint
+  try {
+    const globalUsers = await gitlabGet(
+      gitlabUrl, token,
+      `/users?active=true&per_page=100`
+    );
+    if (Array.isArray(globalUsers) && globalUsers.length > 0) return globalUsers;
+  } catch (e) {
+    // continue fallback
+  }
+
+  return [];
+}
+
+async function getRawFileContent(gitlabUrl, token, projectId, filePath, ref) {
+  return gitlabGetRawText(
+    gitlabUrl, token,
+    `/projects/${encodeURIComponent(projectId)}/repository/files/${encodeURIComponent(filePath)}/raw?ref=${encodeURIComponent(ref)}`
   );
 }
 
@@ -172,6 +303,13 @@ module.exports = {
   getTags,
   listProjects,
   getMergeRequests,
+  getMergeRequestDetails,
+  getMergeRequestChanges,
+  getMergeRequestCommits,
+  createMergeRequest,
+  acceptMergeRequest,
+  getProjectMembers,
+  getRawFileContent,
   getIssues,
   getRecentActivity,
 };

@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { fmtDate } from '../utils/helpers';
 import BranchDropdown from './BranchDropdown';
+import MrReviewModal from './MrReviewModal';
+import MrCreateModal from './MrCreateModal';
 import {
   GitBranchIcon,
   TagIcon,
@@ -12,6 +14,10 @@ import {
   RefreshIcon,
   RocketIcon,
   ExternalLinkIcon,
+  AlertTriangleIcon,
+  CheckIcon,
+  PlusIcon,
+  GitMergeIcon,
 } from './Icons';
 
 export default function DetailView({ config, results }) {
@@ -25,6 +31,10 @@ export default function DetailView({ config, results }) {
   const [issuesLoading, setIssuesLoading] = useState(false);
   const [mrError, setMrError] = useState('');
   const [issuesError, setIssuesError] = useState('');
+  const [mrStateFilter, setMrStateFilter] = useState('opened');
+  const [mrSearch, setMrSearch] = useState('');
+  const [selectedReviewMrId, setSelectedReviewMrId] = useState(null);
+  const [showCreateMrModal, setShowCreateMrModal] = useState(false);
 
   // Branches & Commits & Tags state
   const [branches, setBranches] = useState([]);
@@ -34,7 +44,11 @@ export default function DetailView({ config, results }) {
 
   const [commits, setCommits] = useState([]);
   const [commitsLoading, setCommitsLoading] = useState(false);
+  const [commitsLoadingMore, setCommitsLoadingMore] = useState(false);
+  const [commitsHasMore, setCommitsHasMore] = useState(false);
+  const [commitsPage, setCommitsPage] = useState(1);
   const [commitsError, setCommitsError] = useState('');
+  const commitSentinelRef = useRef(null);
 
   const [tags, setTags] = useState([]);
   const [tagsLoading, setTagsLoading] = useState(false);
@@ -149,17 +163,18 @@ export default function DetailView({ config, results }) {
     fetchTags();
   }, [fetchTags]);
 
-  // Fetch MRs immediately on mount
-  useEffect(() => {
+  // Fetch MRs on mount and when state filter changes
+  const fetchMergeRequests = useCallback((stateOverride) => {
     if (initialMatch && initialMatch.ok && effectiveGitlabUrl && effectiveToken) {
       setMrLoading(true);
       setMrError('');
+      const st = stateOverride !== undefined ? stateOverride : mrStateFilter;
       safeJsonFetch('/api/project-merge-requests', {
         gitlabUrl: effectiveGitlabUrl,
         token: effectiveToken,
         projectPath: initialMatch.key,
         projectId: initialMatch.gitlabProjectId,
-        state: 'opened',
+        state: st,
       })
         .then((data) => {
           setMergeRequests(data.mergeRequests || []);
@@ -167,7 +182,11 @@ export default function DetailView({ config, results }) {
         .catch((e) => setMrError(e.message))
         .finally(() => setMrLoading(false));
     }
-  }, [initialMatch?.key, initialMatch?.gitlabProjectId, effectiveGitlabUrl, effectiveToken]);
+  }, [initialMatch?.key, initialMatch?.gitlabProjectId, effectiveGitlabUrl, effectiveToken, mrStateFilter]);
+
+  useEffect(() => {
+    fetchMergeRequests();
+  }, [fetchMergeRequests]);
 
   // Fetch Issues immediately on mount
   useEffect(() => {
@@ -189,29 +208,70 @@ export default function DetailView({ config, results }) {
     }
   }, [initialMatch?.key, initialMatch?.gitlabProjectId, effectiveGitlabUrl, effectiveToken]);
 
-  // Fetch Commits whenever selectedBranch changes
-  const fetchCommitsForBranch = useCallback((branchName) => {
-    if (!initialMatch || !initialMatch.ok || !effectiveGitlabUrl || !effectiveToken) return;
-    setCommitsLoading(true);
-    setCommitsError('');
+  // Fetch Commits with pagination support
+  const fetchCommitsForBranch = useCallback((branchName, page = 1, append = false) => {
+    if (!initialMatch || !initialMatch.ok || !effectiveGitlabUrl || !effectiveToken || !branchName) return;
+    if (page === 1) {
+      setCommitsLoading(true);
+      setCommitsError('');
+    } else {
+      setCommitsLoadingMore(true);
+    }
+
     safeJsonFetch('/api/project-commits', {
       gitlabUrl: effectiveGitlabUrl,
       token: effectiveToken,
       projectPath: initialMatch.key,
       projectId: initialMatch.gitlabProjectId,
       ref: branchName,
+      page,
+      perPage: 30,
     })
       .then((data) => {
-        setCommits(data.commits || []);
+        const newCommits = data.commits || [];
+        setCommits((prev) => (append ? [...prev, ...newCommits] : newCommits));
+        setCommitsPage(page);
+        setCommitsHasMore(data.hasMore ?? (newCommits.length >= 30));
       })
-      .catch((e) => setCommitsError(e.message))
-      .finally(() => setCommitsLoading(false));
-  }, [initialMatch?.key, initialMatch?.gitlabProjectId, effectiveGitlabUrl, effectiveToken]);
+      .catch((e) => {
+        if (page === 1) setCommitsError(e.message);
+      })
+      .finally(() => {
+        setCommitsLoading(false);
+        setCommitsLoadingMore(false);
+      });
+  }, [initialMatch?.key, initialMatch?.gitlabProjectId, initialMatch?.ok, effectiveGitlabUrl, effectiveToken]);
+
+  const loadMoreCommits = useCallback(() => {
+    if (commitsLoading || commitsLoadingMore || !commitsHasMore) return;
+    const targetRef = selectedBranch || initialMatch?.defaultBranch;
+    fetchCommitsForBranch(targetRef, commitsPage + 1, true);
+  }, [commitsLoading, commitsLoadingMore, commitsHasMore, selectedBranch, initialMatch?.defaultBranch, commitsPage, fetchCommitsForBranch]);
+
+  // Infinite scroll observer for commits
+  useEffect(() => {
+    if (activeTab !== 'commits' || !commitsHasMore || commitsLoading || commitsLoadingMore) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadMoreCommits();
+        }
+      },
+      { threshold: 0.1, rootMargin: '200px' }
+    );
+
+    if (commitSentinelRef.current) {
+      observer.observe(commitSentinelRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [activeTab, commitsHasMore, commitsLoading, commitsLoadingMore, loadMoreCommits]);
 
   // Fetch dynamic branch status when branch is changed by user
   const handleBranchChange = async (newBranch) => {
     setSelectedBranch(newBranch);
-    fetchCommitsForBranch(newBranch);
+    setCommitsPage(1);
+    fetchCommitsForBranch(newBranch, 1, false);
 
     if (newBranch === initialMatch?.defaultBranch && !dynamicData) {
       return;
@@ -273,7 +333,7 @@ export default function DetailView({ config, results }) {
 
   const tabs = [
     { id: 'details', label: 'Details', icon: <DetailsIcon size={14} />, count: null },
-    { id: 'commits', label: 'Recent Commits', icon: <CommitIcon size={14} />, count: commits.length },
+    { id: 'commits', label: 'Recent Commits', icon: <CommitIcon size={14} />, count: commits.length > 0 ? `${commits.length}${commitsHasMore ? '+' : ''}` : null },
     { id: 'tags', label: 'Tags & Releases', icon: <TagIcon size={14} />, count: tags.length },
     { id: 'mr', label: 'Merge Requests', icon: <PullRequestIcon size={14} />, count: mergeRequests.length },
     { id: 'issues', label: 'Issues', icon: <IssueIcon size={14} />, count: issues.length },
@@ -316,8 +376,8 @@ export default function DetailView({ config, results }) {
           <BranchDropdown
             branches={branches}
             tags={tags}
-            selectedRef={selectedBranch || match.defaultBranch}
-            defaultBranch={match.defaultBranch || 'master'}
+            selectedRef={selectedBranch || initialMatch?.defaultBranch}
+            defaultBranch={initialMatch?.defaultBranch || 'master'}
             onSelect={handleBranchChange}
             loading={branchStatusLoading}
           />
@@ -329,7 +389,7 @@ export default function DetailView({ config, results }) {
             onClick={() => {
               fetchBranches();
               fetchTags();
-              handleBranchChange(selectedBranch || match.defaultBranch);
+              handleBranchChange(selectedBranch || initialMatch?.defaultBranch);
             }}
           >
             <RefreshIcon size={13} />
@@ -347,7 +407,7 @@ export default function DetailView({ config, results }) {
           {branchStatusLoading && <span className="dim" style={{ fontSize: '12px' }}>Switching branch...</span>}
         </div>
         <div className="branch-meta-tag">
-          Active Ref: <code>{selectedBranch || match.defaultBranch}</code>
+          Active Ref: <code>{selectedBranch || initialMatch?.defaultBranch}</code>
         </div>
       </div>
 
@@ -397,7 +457,8 @@ export default function DetailView({ config, results }) {
             <div className="card detail-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
                 <div className="subtree-title" style={{ margin: 0 }}>
-                  Recent Commits on <code>{selectedBranch || match.defaultBranch}</code>
+                  Commits on <code>{selectedBranch || initialMatch?.defaultBranch}</code>
+                  {commits.length > 0 && <span className="dim" style={{ fontSize: '12px', fontWeight: 'normal', marginLeft: 8 }}>({commits.length} loaded)</span>}
                 </div>
                 <input
                   type="text"
@@ -417,12 +478,12 @@ export default function DetailView({ config, results }) {
                 />
               </div>
 
-              {commitsLoading && <div className="tab-loading">Loading commit history...</div>}
+              {commitsLoading && commits.length === 0 && <div className="tab-loading">Loading commit history...</div>}
               {commitsError && <p className="error-text">{commitsError}</p>}
               {!commitsLoading && !commitsError && commits.length === 0 && (
                 <div className="tab-empty">No commits found on this branch</div>
               )}
-              {!commitsLoading && (() => {
+              {commits.length > 0 && (() => {
                 // Map commit SHA to tag name
                 const tagsBySha = {};
                 tags.forEach((t) => {
@@ -432,12 +493,12 @@ export default function DetailView({ config, results }) {
                 });
 
                 // If current ref is a tag, associate with first commit if not yet matched
-                const isSelectedTag = tags.some((t) => t.name === (selectedBranch || match.defaultBranch));
+                const isSelectedTag = tags.some((t) => t.name === (selectedBranch || initialMatch?.defaultBranch));
                 if (isSelectedTag && commits.length > 0) {
                   const firstId = commits[0].id;
                   const firstShort = commits[0].shortId;
-                  if (firstId && !tagsBySha[firstId]) tagsBySha[firstId] = selectedBranch || match.defaultBranch;
-                  if (firstShort && !tagsBySha[firstShort]) tagsBySha[firstShort] = selectedBranch || match.defaultBranch;
+                  if (firstId && !tagsBySha[firstId]) tagsBySha[firstId] = selectedBranch || initialMatch?.defaultBranch;
+                  if (firstShort && !tagsBySha[firstShort]) tagsBySha[firstShort] = selectedBranch || initialMatch?.defaultBranch;
                 }
 
                 const q = commitSearch.toLowerCase().trim();
@@ -456,29 +517,61 @@ export default function DetailView({ config, results }) {
                   return <div className="tab-empty">No commits matching &ldquo;{commitSearch}&rdquo;</div>;
                 }
 
-                return filtered.map((c) => {
-                  const matchedTag = tagsBySha[c.id] || tagsBySha[c.shortId] || null;
-                  return (
-                    <a key={c.id} href={c.webUrl} target="_blank" rel="noopener noreferrer" className="list-item">
-                      <div className="list-item-head">
-                        <span className="list-item-title">{c.title}</span>
-                        <div className="commit-head-right">
-                          {matchedTag && (
-                            <span className="commit-tag-pill" title={`Tag: ${matchedTag}`}>
-                              <TagIcon size={11} className="commit-tag-icon" />
-                              <span>{matchedTag}</span>
-                            </span>
-                          )}
-                          <span className="code-pill">{c.shortId}</span>
-                        </div>
+                return (
+                  <>
+                    {filtered.map((c) => {
+                      const matchedTag = tagsBySha[c.id] || tagsBySha[c.shortId] || null;
+                      return (
+                        <a key={c.id} href={c.webUrl} target="_blank" rel="noopener noreferrer" className="list-item">
+                          <div className="list-item-head">
+                            <span className="list-item-title">{c.title}</span>
+                            <div className="commit-head-right">
+                              {matchedTag && (
+                                <span className="commit-tag-pill" title={`Tag: ${matchedTag}`}>
+                                  <TagIcon size={11} className="commit-tag-icon" />
+                                  <span>{matchedTag}</span>
+                                </span>
+                              )}
+                              <span className="code-pill">{c.shortId}</span>
+                            </div>
+                          </div>
+                          <div className="list-item-meta">
+                            <span>by <strong>{c.author}</strong></span>
+                            <span>{fmtDate(c.date)}</span>
+                          </div>
+                        </a>
+                      );
+                    })}
+
+                    {/* Infinite scroll sentinel */}
+                    <div ref={commitSentinelRef} style={{ height: '20px', margin: '4px 0' }} />
+
+                    {commitsLoadingMore && (
+                      <div className="tab-loading" style={{ padding: '12px 0', fontSize: '12.5px' }}>
+                        Loading more commits...
                       </div>
-                      <div className="list-item-meta">
-                        <span>by <strong>{c.author}</strong></span>
-                        <span>{fmtDate(c.date)}</span>
+                    )}
+
+                    {!commitSearch && commitsHasMore && !commitsLoadingMore && (
+                      <div style={{ textAlign: 'center', padding: '10px 0' }}>
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={loadMoreCommits}
+                          style={{ fontSize: '12px' }}
+                        >
+                          Load more commits
+                        </button>
                       </div>
-                    </a>
-                  );
-                });
+                    )}
+
+                    {!commitSearch && !commitsHasMore && commits.length > 0 && (
+                      <div className="dim" style={{ textAlign: 'center', padding: '14px 0', fontSize: '12px' }}>
+                        ✓ All {commits.length} commits loaded
+                      </div>
+                    )}
+                  </>
+                );
               })()}
             </div>
           )}
@@ -576,35 +669,147 @@ export default function DetailView({ config, results }) {
           {/* TAB 4: MERGE REQUESTS */}
           {activeTab === 'mr' && (
             <div className="card detail-card">
-              <div className="subtree-title">Open Merge Requests</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <div className="subtree-title" style={{ margin: 0 }}>
+                    Merge Requests
+                  </div>
+                  {/* MR State Filters */}
+                  <div className="mr-filter-pills">
+                    {['opened', 'merged', 'closed', 'all'].map((st) => (
+                      <button
+                        key={st}
+                        type="button"
+                        className={`mr-filter-pill ${mrStateFilter === st ? 'active' : ''}`}
+                        onClick={() => setMrStateFilter(st)}
+                      >
+                        {st.charAt(0).toUpperCase() + st.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <input
+                    type="text"
+                    placeholder="Filter MRs by title, branch, author..."
+                    value={mrSearch}
+                    onChange={(e) => setMrSearch(e.target.value)}
+                    style={{
+                      background: 'var(--bg)',
+                      border: '1px solid var(--hairline)',
+                      borderRadius: '6px',
+                      padding: '4px 10px',
+                      fontSize: '12px',
+                      color: 'var(--text)',
+                      minWidth: '200px',
+                      outline: 'none',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ fontSize: '12px', padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                    onClick={() => setShowCreateMrModal(true)}
+                  >
+                    <PlusIcon size={13} /> New MR
+                  </button>
+                </div>
+              </div>
+
               {mrLoading && <div className="tab-loading">Loading merge requests...</div>}
               {mrError && <p className="error-text">{mrError}</p>}
               {!mrLoading && !mrError && mergeRequests.length === 0 && (
-                <div className="tab-empty">No open merge requests 🎉</div>
+                <div className="tab-empty">No {mrStateFilter !== 'all' ? mrStateFilter : ''} merge requests found 🎉</div>
               )}
-              {!mrLoading && mergeRequests.map((mr) => (
-                <a key={mr.id} href={mr.webUrl} target="_blank" rel="noopener noreferrer" className="list-item">
-                  <div className="list-item-head">
-                    <span className="list-item-title">{mr.title}</span>
-                    <span className={`state-badge ${mr.state === 'merged' ? 'merged' : mr.state === 'closed' ? 'closed' : 'opened'}`}>
-                      {mr.state}
-                    </span>
-                  </div>
-                  <div className="list-item-meta">
-                    <span>#{mr.id}</span>
-                    <span>{mr.sourceBranch} → {mr.targetBranch}</span>
-                    <span>by {mr.author}</span>
-                    <span>{fmtDate(mr.updatedAt)}</span>
-                  </div>
-                  {mr.labels.length > 0 && (
-                    <div className="label-list">
-                      {mr.labels.map((l, i) => (
-                        <span key={i} className="label-pill">{l}</span>
-                      ))}
+
+              {!mrLoading && (() => {
+                const q = mrSearch.toLowerCase().trim();
+                const filtered = mergeRequests.filter((mr) => {
+                  if (!q) return true;
+                  return (
+                    (mr.title && mr.title.toLowerCase().includes(q)) ||
+                    (mr.author && mr.author.toLowerCase().includes(q)) ||
+                    (mr.sourceBranch && mr.sourceBranch.toLowerCase().includes(q)) ||
+                    (mr.targetBranch && mr.targetBranch.toLowerCase().includes(q)) ||
+                    String(mr.id).includes(q)
+                  );
+                });
+
+                if (filtered.length === 0 && mergeRequests.length > 0) {
+                  return <div className="tab-empty">No merge requests matching &ldquo;{mrSearch}&rdquo;</div>;
+                }
+
+                return filtered.map((mr) => {
+                  const hasConflicts = mr.hasConflicts === true || mr.detailedMergeStatus === 'cannot_be_merged';
+                  const isReady = mr.state === 'opened' && !hasConflicts && (mr.detailedMergeStatus === 'mergeable' || mr.hasConflicts === false);
+
+                  return (
+                    <div
+                      key={mr.id}
+                      className="list-item mr-interactive-item"
+                      onClick={() => setSelectedReviewMrId(mr.id)}
+                      title="Click to review diffs and merge this Merge Request"
+                    >
+                      <div className="list-item-head">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <span className="code-pill">!{mr.id}</span>
+                          <span className="list-item-title">{mr.title}</span>
+                          <span className={`state-badge ${mr.state === 'merged' ? 'merged' : mr.state === 'closed' ? 'closed' : 'opened'}`}>
+                            {mr.state}
+                          </span>
+                          {hasConflicts && (
+                            <span className="conflict-badge" title="Merge conflicts detected with target branch">
+                              <AlertTriangleIcon size={11} /> Conflicts
+                            </span>
+                          )}
+                          {isReady && (
+                            <span className="ready-badge" title="Ready to be merged cleanly">
+                              <CheckIcon size={11} /> Ready
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            style={{ padding: '3px 8px', fontSize: '11.5px', height: '26px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                            onClick={() => setSelectedReviewMrId(mr.id)}
+                          >
+                            <GitMergeIcon size={12} /> Review & Merge
+                          </button>
+                          <a
+                            href={mr.webUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="card-link"
+                            style={{ fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                          >
+                            GitLab <ExternalLinkIcon size={11} />
+                          </a>
+                        </div>
+                      </div>
+
+                      <div className="list-item-meta">
+                        <span className="branch-path-pill">
+                          <GitBranchIcon size={11} /> {mr.sourceBranch} → {mr.targetBranch}
+                        </span>
+                        <span>by <strong>{mr.author}</strong></span>
+                        <span>{fmtDate(mr.updatedAt)}</span>
+                      </div>
+
+                      {mr.labels.length > 0 && (
+                        <div className="label-list">
+                          {mr.labels.map((l, i) => (
+                            <span key={i} className="label-pill">{l}</span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </a>
-              ))}
+                  );
+                });
+              })()}
             </div>
           )}
 
@@ -644,6 +849,35 @@ export default function DetailView({ config, results }) {
           )}
         </div>
       </main>
+
+      {/* In-App MR Review & Diff & Merge Modal */}
+      {selectedReviewMrId && (
+        <MrReviewModal
+          isOpen={!!selectedReviewMrId}
+          onClose={() => setSelectedReviewMrId(null)}
+          mrId={selectedReviewMrId}
+          project={match}
+          config={config}
+          onMerged={() => {
+            fetchMergeRequests();
+          }}
+        />
+      )}
+
+      {/* New Merge Request Creation Modal */}
+      {showCreateMrModal && (
+        <MrCreateModal
+          isOpen={showCreateMrModal}
+          onClose={() => setShowCreateMrModal(false)}
+          project={match}
+          config={config}
+          branches={branches}
+          tags={tags}
+          onSuccess={() => {
+            fetchMergeRequests();
+          }}
+        />
+      )}
     </div>
   );
 }
