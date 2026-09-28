@@ -1,16 +1,64 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { fmtDate } from '../utils/helpers';
+import BranchDropdown from './BranchDropdown';
+import {
+  GitBranchIcon,
+  TagIcon,
+  CommitIcon,
+  PullRequestIcon,
+  IssueIcon,
+  DetailsIcon,
+  RefreshIcon,
+  RocketIcon,
+  ExternalLinkIcon,
+} from './Icons';
 
 export default function DetailView({ config, results }) {
   const { key } = useParams();
   const [activeTab, setActiveTab] = useState('details');
+
+  // MRs & Issues state
   const [mergeRequests, setMergeRequests] = useState([]);
   const [issues, setIssues] = useState([]);
   const [mrLoading, setMrLoading] = useState(false);
   const [issuesLoading, setIssuesLoading] = useState(false);
   const [mrError, setMrError] = useState('');
   const [issuesError, setIssuesError] = useState('');
+
+  // Branches & Commits & Tags state
+  const [branches, setBranches] = useState([]);
+  const [selectedBranch, setSelectedBranch] = useState('');
+  const [branchesLoading, setBranchesLoading] = useState(false);
+  const [branchStatusLoading, setBranchStatusLoading] = useState(false);
+
+  const [commits, setCommits] = useState([]);
+  const [commitsLoading, setCommitsLoading] = useState(false);
+  const [commitsError, setCommitsError] = useState('');
+
+  const [tags, setTags] = useState([]);
+  const [tagsLoading, setTagsLoading] = useState(false);
+  const [tagsError, setTagsError] = useState('');
+
+  const [copiedPull, setCopiedPull] = useState(false);
+  const [copiedNotes, setCopiedNotes] = useState(false);
+
+  // Dynamic branch override state
+  const [dynamicData, setDynamicData] = useState(null);
+  const [branchesError, setBranchesError] = useState('');
+
+  // Search filter states for Commits and Tags tabs
+  const [commitSearch, setCommitSearch] = useState('');
+  const [tagSearch, setTagSearch] = useState('');
+
+  // Fallback to session storage for token and results
+  const effectiveToken = config.token || sessionStorage.getItem('vb_session_token') || '';
+  const effectiveGitlabUrl = config.gitlabUrl || sessionStorage.getItem('vb_session_gitlab_url') || '';
+
+  useEffect(() => {
+    if (config.token) sessionStorage.setItem('vb_session_token', config.token);
+    if (config.gitlabUrl) sessionStorage.setItem('vb_session_gitlab_url', config.gitlabUrl);
+  }, [config.token, config.gitlabUrl]);
 
   // Try from state first, fall back to sessionStorage
   let allResults = results;
@@ -22,57 +70,180 @@ export default function DetailView({ config, results }) {
     }
   }
 
-  const match = allResults.find((r) => r.key === key);
+  const initialMatch = allResults.find((r) => r.key === key);
+  const match = dynamicData ? { ...initialMatch, ...dynamicData } : initialMatch;
 
-  // Fetch MRs when tab is activated
+  // Initialize selected branch
   useEffect(() => {
-    if (activeTab === 'mr' && match && match.ok) {
+    if (initialMatch?.defaultBranch && !selectedBranch) {
+      setSelectedBranch(initialMatch.defaultBranch);
+    }
+  }, [initialMatch?.defaultBranch, selectedBranch]);
+
+  // Helper for safe JSON fetching with clear server restart message if HTML returned
+  const safeJsonFetch = async (url, payload) => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      const text = await res.text();
+      if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+        throw new Error('Please restart "npm run dev" in terminal to load backend API updates.');
+      }
+      throw new Error(`Server ${res.status}: ${text.slice(0, 100)}`);
+    }
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    return data;
+  };
+
+  // Fetch Branches list on mount
+  const fetchBranches = useCallback(() => {
+    if (initialMatch && initialMatch.ok && effectiveGitlabUrl && effectiveToken) {
+      setBranchesLoading(true);
+      setBranchesError('');
+      safeJsonFetch('/api/project-branches', {
+        gitlabUrl: effectiveGitlabUrl,
+        token: effectiveToken,
+        projectPath: initialMatch.key,
+        projectId: initialMatch.gitlabProjectId,
+      })
+        .then((data) => {
+          if (data.branches) setBranches(data.branches);
+        })
+        .catch((e) => {
+          console.warn('Failed to fetch branches:', e.message);
+          setBranchesError(e.message);
+        })
+        .finally(() => setBranchesLoading(false));
+    }
+  }, [initialMatch?.key, initialMatch?.gitlabProjectId, effectiveGitlabUrl, effectiveToken]);
+
+  useEffect(() => {
+    fetchBranches();
+  }, [fetchBranches]);
+
+  // Fetch Tags list on mount
+  const fetchTags = useCallback(() => {
+    if (initialMatch && initialMatch.ok && effectiveGitlabUrl && effectiveToken) {
+      setTagsLoading(true);
+      setTagsError('');
+      safeJsonFetch('/api/project-tags', {
+        gitlabUrl: effectiveGitlabUrl,
+        token: effectiveToken,
+        projectPath: initialMatch.key,
+        projectId: initialMatch.gitlabProjectId,
+      })
+        .then((data) => {
+          setTags(data.tags || []);
+        })
+        .catch((e) => setTagsError(e.message))
+        .finally(() => setTagsLoading(false));
+    }
+  }, [initialMatch?.key, initialMatch?.gitlabProjectId, effectiveGitlabUrl, effectiveToken]);
+
+  useEffect(() => {
+    fetchTags();
+  }, [fetchTags]);
+
+  // Fetch MRs immediately on mount
+  useEffect(() => {
+    if (initialMatch && initialMatch.ok && effectiveGitlabUrl && effectiveToken) {
       setMrLoading(true);
       setMrError('');
-      fetch('/api/project-merge-requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          gitlabUrl: config.gitlabUrl,
-          token: config.token,
-          projectPath: match.key,
-          state: 'opened',
-        }),
+      safeJsonFetch('/api/project-merge-requests', {
+        gitlabUrl: effectiveGitlabUrl,
+        token: effectiveToken,
+        projectPath: initialMatch.key,
+        projectId: initialMatch.gitlabProjectId,
+        state: 'opened',
       })
-        .then((res) => res.json())
         .then((data) => {
-          if (data.error) throw new Error(data.error);
           setMergeRequests(data.mergeRequests || []);
         })
         .catch((e) => setMrError(e.message))
         .finally(() => setMrLoading(false));
     }
-  }, [activeTab, match?.key, match?.ok, config.gitlabUrl, config.token]);
+  }, [initialMatch?.key, initialMatch?.gitlabProjectId, effectiveGitlabUrl, effectiveToken]);
 
-  // Fetch Issues when tab is activated
+  // Fetch Issues immediately on mount
   useEffect(() => {
-    if (activeTab === 'issues' && match && match.ok) {
+    if (initialMatch && initialMatch.ok && effectiveGitlabUrl && effectiveToken) {
       setIssuesLoading(true);
       setIssuesError('');
-      fetch('/api/project-issues', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          gitlabUrl: config.gitlabUrl,
-          token: config.token,
-          projectPath: match.key,
-          state: 'opened',
-        }),
+      safeJsonFetch('/api/project-issues', {
+        gitlabUrl: effectiveGitlabUrl,
+        token: effectiveToken,
+        projectPath: initialMatch.key,
+        projectId: initialMatch.gitlabProjectId,
+        state: 'opened',
       })
-        .then((res) => res.json())
         .then((data) => {
-          if (data.error) throw new Error(data.error);
           setIssues(data.issues || []);
         })
         .catch((e) => setIssuesError(e.message))
         .finally(() => setIssuesLoading(false));
     }
-  }, [activeTab, match?.key, match?.ok, config.gitlabUrl, config.token]);
+  }, [initialMatch?.key, initialMatch?.gitlabProjectId, effectiveGitlabUrl, effectiveToken]);
+
+  // Fetch Commits whenever selectedBranch changes
+  const fetchCommitsForBranch = useCallback((branchName) => {
+    if (!initialMatch || !initialMatch.ok || !effectiveGitlabUrl || !effectiveToken) return;
+    setCommitsLoading(true);
+    setCommitsError('');
+    safeJsonFetch('/api/project-commits', {
+      gitlabUrl: effectiveGitlabUrl,
+      token: effectiveToken,
+      projectPath: initialMatch.key,
+      projectId: initialMatch.gitlabProjectId,
+      ref: branchName,
+    })
+      .then((data) => {
+        setCommits(data.commits || []);
+      })
+      .catch((e) => setCommitsError(e.message))
+      .finally(() => setCommitsLoading(false));
+  }, [initialMatch?.key, initialMatch?.gitlabProjectId, effectiveGitlabUrl, effectiveToken]);
+
+  // Fetch dynamic branch status when branch is changed by user
+  const handleBranchChange = async (newBranch) => {
+    setSelectedBranch(newBranch);
+    fetchCommitsForBranch(newBranch);
+
+    if (newBranch === initialMatch?.defaultBranch && !dynamicData) {
+      return;
+    }
+
+    setBranchStatusLoading(true);
+    try {
+      const pConfig = (config.projects || []).find((p) => p.path === initialMatch?.key) || {};
+      const data = await safeJsonFetch('/api/branch-status', {
+        gitlabUrl: effectiveGitlabUrl,
+        token: effectiveToken,
+        projectPath: initialMatch?.key,
+        projectId: initialMatch?.gitlabProjectId,
+        ref: newBranch,
+        subtreePath: pConfig.subtreePath || initialMatch?.subtree?.subtreePath,
+        basePath: pConfig.basePath || initialMatch?.subtree?.baseProjectPath,
+        packageJsonPath: config.packageJsonPath,
+      });
+      setDynamicData(data);
+    } catch (e) {
+      console.warn('Failed to fetch branch status', e);
+    } finally {
+      setBranchStatusLoading(false);
+    }
+  };
+
+  // Initial commits fetch for default branch
+  useEffect(() => {
+    if (selectedBranch) {
+      fetchCommitsForBranch(selectedBranch);
+    }
+  }, [selectedBranch, fetchCommitsForBranch]);
 
   if (!match) {
     return (
@@ -92,9 +263,7 @@ export default function DetailView({ config, results }) {
         <main>
           <div className="detail-content">
             <div className="card status-error">
-              <p className="error-text">
-                Project not found. Go back and refresh.
-              </p>
+              <p className="error-text">Project not found. Go back to board and refresh.</p>
             </div>
           </div>
         </main>
@@ -103,10 +272,14 @@ export default function DetailView({ config, results }) {
   }
 
   const tabs = [
-    { id: 'details', label: '📋 Details', count: null },
-    { id: 'mr', label: '🔀 Merge Requests', count: mergeRequests.length },
-    { id: 'issues', label: '🐛 Issues', count: issues.length },
+    { id: 'details', label: 'Details', icon: <DetailsIcon size={14} />, count: null },
+    { id: 'commits', label: 'Recent Commits', icon: <CommitIcon size={14} />, count: commits.length },
+    { id: 'tags', label: 'Tags & Releases', icon: <TagIcon size={14} />, count: tags.length },
+    { id: 'mr', label: 'Merge Requests', icon: <PullRequestIcon size={14} />, count: mergeRequests.length },
+    { id: 'issues', label: 'Issues', icon: <IssueIcon size={14} />, count: issues.length },
   ];
+
+  const cleanWebUrl = match.webUrl || (config.gitlabUrl ? `${config.gitlabUrl.replace(/\/+$/, '')}/${match.key}` : '#');
 
   return (
     <div className="app">
@@ -119,9 +292,65 @@ export default function DetailView({ config, results }) {
           </div>
         </div>
         <div className="topbar-actions">
-          <Link to="/" className="btn btn-ghost">← Back to board</Link>
+          {/* Quick GitLab Shortcut Links */}
+          <a href={`${cleanWebUrl}/-/pipelines`} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" title="GitLab Pipelines">
+            <RocketIcon size={13} style={{ marginRight: 5 }} /> Pipelines
+          </a>
+          <a href={`${cleanWebUrl}/-/tags`} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" title="GitLab Tags">
+            <TagIcon size={13} style={{ marginRight: 5 }} /> Tags
+          </a>
+          <a href={`${cleanWebUrl}/-/branches`} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" title="GitLab Branches">
+            <GitBranchIcon size={13} style={{ marginRight: 5 }} /> Branches
+          </a>
+          <Link to="/" className="btn btn-primary">← Back to board</Link>
         </div>
       </header>
+
+      {/* Dynamic Branch & Tag Switcher Bar */}
+      <div className="branch-switcher-bar">
+        <div className="branch-selector-wrap">
+          <span className="branch-icon">
+            <GitBranchIcon size={14} style={{ verticalAlign: 'middle', marginRight: 5 }} />
+            Ref / Branch:
+          </span>
+          <BranchDropdown
+            branches={branches}
+            tags={tags}
+            selectedRef={selectedBranch || match.defaultBranch}
+            defaultBranch={match.defaultBranch || 'master'}
+            onSelect={handleBranchChange}
+            loading={branchStatusLoading}
+          />
+          <button
+            type="button"
+            className="btn btn-ghost btn-icon-round"
+            style={{ padding: '6px 8px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+            title="Reload branches, tags & commits"
+            onClick={() => {
+              fetchBranches();
+              fetchTags();
+              handleBranchChange(selectedBranch || match.defaultBranch);
+            }}
+          >
+            <RefreshIcon size={13} />
+          </button>
+          {branchesLoading && <span className="dim" style={{ fontSize: '12px' }}>Loading branches…</span>}
+          {branchesError && (
+            <span
+              style={{ color: 'var(--warn)', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' }}
+              onClick={fetchBranches}
+              title="Click to retry loading branches"
+            >
+              ⚠️ {branchesError} (retry)
+            </span>
+          )}
+          {branchStatusLoading && <span className="dim" style={{ fontSize: '12px' }}>Switching branch...</span>}
+        </div>
+        <div className="branch-meta-tag">
+          Active Ref: <code>{selectedBranch || match.defaultBranch}</code>
+        </div>
+      </div>
+
       <main>
         <div className="detail-content">
           <div className="detail-tabs">
@@ -131,7 +360,8 @@ export default function DetailView({ config, results }) {
                 className={`detail-tab ${activeTab === tab.id ? 'active' : ''}`}
                 onClick={() => setActiveTab(tab.id)}
               >
-                {tab.label}
+                <span className="tab-icon">{tab.icon}</span>
+                <span>{tab.label}</span>
                 {tab.count != null && tab.count >= 0 && (
                   <span className="tab-badge">{tab.count}</span>
                 )}
@@ -139,17 +369,12 @@ export default function DetailView({ config, results }) {
             ))}
           </div>
 
-          {activeTab === 'details' && !match.ok && (
-            <div className="card status-error">
-              <p className="error-text">{match.error}</p>
-            </div>
-          )}
-
-          {activeTab === 'details' && match.ok && (
+          {/* TAB 1: DETAILS */}
+          {activeTab === 'details' && (
             <>
               <div className="card status-ok detail-card">
                 <div className="subtree-title">Project Information</div>
-                <DataRow label="Branch" value={match.defaultBranch || '—'} />
+                <DataRow label="Tracked branch" value={selectedBranch || match.defaultBranch || '—'} />
                 <DataRow label="Latest commit" value={match.commitFullSha || match.commitSha || '—'} />
                 <DataRow label="Commit date" value={fmtDate(match.commitDate)} dim />
                 <DataRow label="Author" value={match.commitAuthor || '—'} dim />
@@ -157,23 +382,208 @@ export default function DetailView({ config, results }) {
                 <DataRow label="Latest tag" value={match.latestTag || '—'} />
                 <DataRow label="package.json ver." value={match.packageVersion || '—'} />
                 <div className="card-footer">
-                  <a className="card-link" href={match.webUrl || '#'} target="_blank" rel="noopener">open in gitlab →</a>
+                  <a className="card-link" href={cleanWebUrl} target="_blank" rel="noopener">open in gitlab →</a>
                 </div>
               </div>
-              {match.subtree && <SubtreeDetail subtree={match.subtree} />}
+
+              {match.subtree && (
+                <SubtreeDetail subtree={match.subtree} />
+              )}
             </>
           )}
 
-          {activeTab === 'mr' && match.ok && (
+          {/* TAB 2: RECENT COMMITS */}
+          {activeTab === 'commits' && (
+            <div className="card detail-card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+                <div className="subtree-title" style={{ margin: 0 }}>
+                  Recent Commits on <code>{selectedBranch || match.defaultBranch}</code>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Filter commits by title, author, sha..."
+                  value={commitSearch}
+                  onChange={(e) => setCommitSearch(e.target.value)}
+                  style={{
+                    background: 'var(--bg)',
+                    border: '1px solid var(--hairline)',
+                    borderRadius: '6px',
+                    padding: '4px 10px',
+                    fontSize: '12.5px',
+                    color: 'var(--text)',
+                    minWidth: '220px',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              {commitsLoading && <div className="tab-loading">Loading commit history...</div>}
+              {commitsError && <p className="error-text">{commitsError}</p>}
+              {!commitsLoading && !commitsError && commits.length === 0 && (
+                <div className="tab-empty">No commits found on this branch</div>
+              )}
+              {!commitsLoading && (() => {
+                // Map commit SHA to tag name
+                const tagsBySha = {};
+                tags.forEach((t) => {
+                  if (t.commit?.id) tagsBySha[t.commit.id] = t.name;
+                  if (t.commit?.shortId) tagsBySha[t.commit.shortId] = t.name;
+                  if (t.target) tagsBySha[t.target] = t.name;
+                });
+
+                // If current ref is a tag, associate with first commit if not yet matched
+                const isSelectedTag = tags.some((t) => t.name === (selectedBranch || match.defaultBranch));
+                if (isSelectedTag && commits.length > 0) {
+                  const firstId = commits[0].id;
+                  const firstShort = commits[0].shortId;
+                  if (firstId && !tagsBySha[firstId]) tagsBySha[firstId] = selectedBranch || match.defaultBranch;
+                  if (firstShort && !tagsBySha[firstShort]) tagsBySha[firstShort] = selectedBranch || match.defaultBranch;
+                }
+
+                const q = commitSearch.toLowerCase().trim();
+                const filtered = commits.filter(
+                  (c) =>
+                    !q ||
+                    (c.title && c.title.toLowerCase().includes(q)) ||
+                    (c.author && c.author.toLowerCase().includes(q)) ||
+                    (c.shortId && c.shortId.toLowerCase().includes(q)) ||
+                    (c.id && c.id.toLowerCase().includes(q)) ||
+                    (tagsBySha[c.id] && tagsBySha[c.id].toLowerCase().includes(q)) ||
+                    (tagsBySha[c.shortId] && tagsBySha[c.shortId].toLowerCase().includes(q))
+                );
+
+                if (filtered.length === 0 && commits.length > 0) {
+                  return <div className="tab-empty">No commits matching &ldquo;{commitSearch}&rdquo;</div>;
+                }
+
+                return filtered.map((c) => {
+                  const matchedTag = tagsBySha[c.id] || tagsBySha[c.shortId] || null;
+                  return (
+                    <a key={c.id} href={c.webUrl} target="_blank" rel="noopener noreferrer" className="list-item">
+                      <div className="list-item-head">
+                        <span className="list-item-title">{c.title}</span>
+                        <div className="commit-head-right">
+                          {matchedTag && (
+                            <span className="commit-tag-pill" title={`Tag: ${matchedTag}`}>
+                              <TagIcon size={11} className="commit-tag-icon" />
+                              <span>{matchedTag}</span>
+                            </span>
+                          )}
+                          <span className="code-pill">{c.shortId}</span>
+                        </div>
+                      </div>
+                      <div className="list-item-meta">
+                        <span>by <strong>{c.author}</strong></span>
+                        <span>{fmtDate(c.date)}</span>
+                      </div>
+                    </a>
+                  );
+                });
+              })()}
+            </div>
+          )}
+
+          {/* TAB 3: TAGS & RELEASES */}
+          {activeTab === 'tags' && (
+            <div className="card detail-card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+                <div className="subtree-title" style={{ margin: 0 }}>Tags &amp; Release History</div>
+                <input
+                  type="text"
+                  placeholder="Filter tags by name or message..."
+                  value={tagSearch}
+                  onChange={(e) => setTagSearch(e.target.value)}
+                  style={{
+                    background: 'var(--bg)',
+                    border: '1px solid var(--hairline)',
+                    borderRadius: '6px',
+                    padding: '4px 10px',
+                    fontSize: '12.5px',
+                    color: 'var(--text)',
+                    minWidth: '220px',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              {tagsLoading && <div className="tab-loading">Loading tags...</div>}
+              {tagsError && <p className="error-text">{tagsError}</p>}
+              {!tagsLoading && !tagsError && tags.length === 0 && (
+                <div className="tab-empty">No tags found in this project</div>
+              )}
+              {!tagsLoading && (() => {
+                const q = tagSearch.toLowerCase().trim();
+                const filtered = tags.filter(
+                  (t) =>
+                    !q ||
+                    (t.name && t.name.toLowerCase().includes(q)) ||
+                    (t.message && t.message.toLowerCase().includes(q)) ||
+                    (t.release?.description && t.release.description.toLowerCase().includes(q)) ||
+                    (t.commit?.shortId && t.commit.shortId.toLowerCase().includes(q))
+                );
+
+                if (filtered.length === 0 && tags.length > 0) {
+                  return <div className="tab-empty">No tags matching &ldquo;{tagSearch}&rdquo;</div>;
+                }
+
+                return filtered.map((t) => (
+                  <div key={t.name} className="list-item tag-history-item">
+                    <div className="list-item-head">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span className="tag-pill" style={{ fontSize: '12.5px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                          <TagIcon size={13} /> {t.name}
+                        </span>
+                        {t.commit && <span className="code-pill">{t.commit.shortId}</span>}
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          style={{ padding: '2px 8px', fontSize: '11px', height: '24px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          title="Switch ref to view commits at this tag"
+                          onClick={() => handleBranchChange(t.name)}
+                        >
+                          <GitBranchIcon size={12} /> Switch Ref
+                        </button>
+                        <a
+                          href={`${cleanWebUrl}/-/tags/${encodeURIComponent(t.name)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="card-link"
+                          style={{ fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                        >
+                          GitLab Tag <ExternalLinkIcon size={11} />
+                        </a>
+                      </div>
+                    </div>
+                    {t.commit?.title && (
+                      <div style={{ fontSize: '12px', color: 'var(--text)', margin: '4px 0' }}>
+                        Commit: <strong>{t.commit.title}</strong>
+                      </div>
+                    )}
+                    {t.message && <div style={{ fontSize: '12px', color: 'var(--text-faint)', margin: '2px 0' }}>{t.message}</div>}
+                    <div className="list-item-meta">
+                      {t.commit && <span>by <strong>{t.commit.author}</strong></span>}
+                      {t.commit && <span>{fmtDate(t.commit.date)}</span>}
+                      {t.release && <span style={{ color: 'var(--accent)' }}>Release: {t.release.description}</span>}
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+          )}
+
+          {/* TAB 4: MERGE REQUESTS */}
+          {activeTab === 'mr' && (
             <div className="card detail-card">
               <div className="subtree-title">Open Merge Requests</div>
               {mrLoading && <div className="tab-loading">Loading merge requests...</div>}
               {mrError && <p className="error-text">{mrError}</p>}
               {!mrLoading && !mrError && mergeRequests.length === 0 && (
-                <div className="tab-empty">No open merge requests</div>
+                <div className="tab-empty">No open merge requests 🎉</div>
               )}
               {!mrLoading && mergeRequests.map((mr) => (
-                <a key={mr.id} href={mr.webUrl} target="_blank" rel="noopener" className="list-item">
+                <a key={mr.id} href={mr.webUrl} target="_blank" rel="noopener noreferrer" className="list-item">
                   <div className="list-item-head">
                     <span className="list-item-title">{mr.title}</span>
                     <span className={`state-badge ${mr.state === 'merged' ? 'merged' : mr.state === 'closed' ? 'closed' : 'opened'}`}>
@@ -198,7 +608,8 @@ export default function DetailView({ config, results }) {
             </div>
           )}
 
-          {activeTab === 'issues' && match.ok && (
+          {/* TAB 5: ISSUES */}
+          {activeTab === 'issues' && (
             <div className="card detail-card">
               <div className="subtree-title">Open Issues</div>
               {issuesLoading && <div className="tab-loading">Loading issues...</div>}
@@ -207,7 +618,7 @@ export default function DetailView({ config, results }) {
                 <div className="tab-empty">No open issues 🎉</div>
               )}
               {!issuesLoading && issues.map((issue) => (
-                <a key={issue.id} href={issue.webUrl} target="_blank" rel="noopener" className="list-item">
+                <a key={issue.id} href={issue.webUrl} target="_blank" rel="noopener noreferrer" className="list-item">
                   <div className="list-item-head">
                     <span className="list-item-title">{issue.title}</span>
                     <span className={`state-badge ${issue.state === 'closed' ? 'closed' : 'opened'}`}>
@@ -277,19 +688,24 @@ function SubtreeDetail({ subtree }) {
         <span className="label">Status</span>
         <span className="value">{statusHtml}</span>
       </div>
-      <div className="divider"></div>
+
+      <div className="divider" style={{ margin: '14px 0' }}></div>
       <DataRow label="Pulled SHA" value={st.pulledSha || '—'} />
       <DataRow label="Pulled on" value={fmtDate(st.pulledAt)} dim />
       <DataRow label="Pulled commit title" value={st.pulledCommitTitle || '—'} dim />
-      <div className="divider"></div>
+      <div className="divider" style={{ margin: '14px 0' }}></div>
       <DataRow label="Base default branch" value={st.baseDefaultBranch || '—'} />
       <DataRow label="Base HEAD SHA" value={st.baseLatestSha || '—'} />
       <DataRow label="Base HEAD date" value={fmtDate(st.baseLatestDate)} dim />
       {st.squashCommitNote && <p className="error-text" style={{ marginTop: 10 }}>{st.squashCommitNote}</p>}
+
+      {/* Unpulled Commits List */}
       {st.behindCommits && st.behindCommits.length > 0 && (
         <>
-          <div className="subtree-title" style={{ marginTop: 14 }}>Commits not yet pulled</div>
-          <div className="behind-list behind-list-full">
+          <div className="subtree-title" style={{ marginTop: 18 }}>
+            Commits not yet pulled ({st.behindCommits.length})
+          </div>
+          <div className="behind-list behind-list-full" style={{ marginTop: 10 }}>
             {st.behindCommits.map((c, i) => (
               <div className="behind-commit" key={i}>
                 <span className="sha">{c.sha}</span>

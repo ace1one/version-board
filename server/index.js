@@ -12,6 +12,11 @@ app.use(express.json({ limit: '2mb' }));
 // API routes
 app.use('/api', require('./routes/gitlab'));
 
+// API 404 fallback — return JSON error instead of SPA HTML
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ error: `API route not found: ${req.method} ${req.originalUrl}. Please restart the server.` });
+});
+
 // Serve React build (SPA)
 app.use(express.static(REACT_DIST));
 

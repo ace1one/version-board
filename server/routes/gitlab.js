@@ -9,5 +9,9 @@ router.post('/check-all', gitlabController.checkAll);
 router.post('/list-projects', gitlabController.listProjects);
 router.post('/project-merge-requests', gitlabController.getProjectMergeRequests);
 router.post('/project-issues', gitlabController.getProjectIssues);
+router.post('/project-branches', gitlabController.getProjectBranches);
+router.post('/project-commits', gitlabController.getProjectCommits);
+router.post('/project-tags', gitlabController.getProjectTags);
+router.post('/branch-status', gitlabController.getBranchStatus);
 
 module.exports = router;

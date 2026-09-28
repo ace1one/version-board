@@ -4,6 +4,7 @@ import { loadConfig, saveConfig } from './utils/storage';
 import { fmtDate, cardStatusClass } from './utils/helpers';
 import TopBar from './components/TopBar';
 import Board from './components/Board';
+import TableView from './components/TableView';
 import EmptyState from './components/EmptyState';
 import SettingsDrawer from './components/SettingsDrawer';
 import DetailView from './components/DetailView';
@@ -13,6 +14,8 @@ const DEFAULT_STATE = {
   token: '',
   rememberToken: false,
   packageJsonPath: 'package.json',
+  defaultSubtreePath: 'projects/base-client',
+  defaultSubtreeBasePath: 'fonebank/banksmart-client-web',
   projects: [],
 };
 
@@ -23,17 +26,42 @@ export default function App() {
   const [connStatusClass, setConnStatusClass] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem('vb_view_mode') || 'grid');
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState(0); // in minutes
 
-  // Filter results based on search query
+  // Compute stats across all results
+  const stats = {
+    total: results.length,
+    behind: results.filter((r) => r.subtree && r.subtree.upToDate === false).length,
+    synced: results.filter((r) => r.subtree && r.subtree.upToDate === true).length,
+    errors: results.filter((r) => !r.ok || (r.subtree && r.subtree.error)).length,
+  };
+
+  // Filter results based on search query and status filter
   const filteredResults = results.filter((r) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      (r.label || '').toLowerCase().includes(q) ||
-      (r.key || '').toLowerCase().includes(q) ||
-      (r.packageVersion || '').toLowerCase().includes(q) ||
-      (r.latestTag || '').toLowerCase().includes(q)
-    );
+    // 1. Text Search Filter
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const matchSearch =
+        (r.label || '').toLowerCase().includes(q) ||
+        (r.key || '').toLowerCase().includes(q) ||
+        (r.packageVersion || '').toLowerCase().includes(q) ||
+        (r.latestTag || '').toLowerCase().includes(q);
+      if (!matchSearch) return false;
+    }
+
+    // 2. Status Filter Pill
+    if (statusFilter === 'behind') {
+      return r.subtree && r.subtree.upToDate === false;
+    }
+    if (statusFilter === 'synced') {
+      return r.subtree && r.subtree.upToDate === true;
+    }
+    if (statusFilter === 'errors') {
+      return !r.ok || (r.subtree && r.subtree.error);
+    }
+    return true;
   });
 
   // Auto-open settings on first run
@@ -84,6 +112,21 @@ export default function App() {
     }
   }, [config.gitlabUrl, config.token, config.projects.length, config.packageJsonPath]);
 
+  // Handle auto-refresh interval
+  useEffect(() => {
+    if (!autoRefreshInterval || autoRefreshInterval <= 0) return;
+    const intervalMs = autoRefreshInterval * 60 * 1000;
+    const timer = setInterval(() => {
+      refreshAll();
+    }, intervalMs);
+    return () => clearInterval(timer);
+  }, [autoRefreshInterval, refreshAll]);
+
+  const handleViewModeChange = (mode) => {
+    setViewMode(mode);
+    localStorage.setItem('vb_view_mode', mode);
+  };
+
   const handleSaveSettings = (updatedConfig) => {
     setConfig(updatedConfig);
     saveConfig(updatedConfig);
@@ -107,13 +150,22 @@ export default function App() {
               onRefresh={refreshAll}
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
-              resultCount={filteredResults.length}
+              statusFilter={statusFilter}
+              onStatusFilterChange={setStatusFilter}
+              viewMode={viewMode}
+              onViewModeChange={handleViewModeChange}
+              stats={stats}
             />
             <main>
               {showEmpty && (
                 <EmptyState onAddFirst={handleOpenSettings} isSearch={!searchQuery ? false : true} />
               )}
-              {!showEmpty && <Board results={filteredResults} />}
+              {!showEmpty && viewMode === 'grid' && (
+                <Board results={filteredResults} gitlabUrl={config.gitlabUrl} />
+              )}
+              {!showEmpty && viewMode === 'table' && (
+                <TableView results={filteredResults} gitlabUrl={config.gitlabUrl} />
+              )}
             </main>
             {settingsOpen && (
               <SettingsDrawer

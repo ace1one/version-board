@@ -62,6 +62,7 @@ async function getSubtreeStatus(gitlabUrl, token, mainProjectId, mainRef, subtre
 
   const result = {
     pulledVersion,
+    subtreePath,
     baseProjectPath,
     baseDefaultBranch: baseProject.default_branch,
     baseLatestSha: baseLatest ? baseLatest.id : null,
@@ -135,10 +136,11 @@ async function checkAll(req, res) {
       const info = await gitlabApi.getProjectInfo(gitlabUrl, token, p.path);
       const ref = p.ref || info.default_branch;
 
-      const [commit, tag, pkgVersion] = await Promise.all([
+      const [commit, tag, pkgVersion, pipeline] = await Promise.all([
         gitlabApi.getLatestCommit(gitlabUrl, token, info.id, ref),
         gitlabApi.getLatestTag(gitlabUrl, token, info.id).catch(() => null),
         gitlabApi.getPackageVersion(gitlabUrl, token, info.id, ref, pkgPath),
+        gitlabApi.getLatestPipeline(gitlabUrl, token, info.id, ref).catch(() => null),
       ]);
 
       const out = {
@@ -155,6 +157,7 @@ async function checkAll(req, res) {
         latestTag: tag ? tag.name : null,
         tagDate: tag ? (tag.commit && tag.commit.committed_date) : null,
         packageVersion: pkgVersion,
+        pipeline: pipeline ? { id: pipeline.id, status: pipeline.status, webUrl: pipeline.web_url } : null,
       };
 
       if (p.type === 'subtree' && p.subtreePath && p.basePath) {
@@ -247,4 +250,131 @@ async function getProjectIssues(req, res) {
   }
 }
 
-module.exports = { testConnection, checkAll, listProjects, getProjectMergeRequests, getProjectIssues };
+async function getProjectBranches(req, res) {
+  const { gitlabUrl, token, projectPath, projectId } = req.body;
+  try {
+    const pId = projectId || (await gitlabApi.getProjectInfo(gitlabUrl, token, projectPath)).id;
+    const branches = await gitlabApi.getBranches(gitlabUrl, token, pId);
+    res.json({
+      branches: (branches || []).map((b) => ({
+        name: b.name,
+        default: b.default,
+        merged: b.merged,
+        protected: b.protected,
+        webUrl: b.web_url,
+        commit: b.commit ? {
+          id: b.commit.id,
+          shortId: b.commit.short_id,
+          title: b.commit.title,
+          author: b.commit.author_name,
+          date: b.commit.committed_date,
+        } : null,
+      })),
+    });
+  } catch (e) {
+    console.error('getProjectBranches error:', e.message);
+    res.status(e.status || 500).json({ error: e.message });
+  }
+}
+
+async function getProjectCommits(req, res) {
+  const { gitlabUrl, token, projectPath, projectId, ref } = req.body;
+  try {
+    const pId = projectId || (await gitlabApi.getProjectInfo(gitlabUrl, token, projectPath)).id;
+    const commits = await gitlabApi.getCommits(gitlabUrl, token, pId, ref);
+    res.json({
+      commits: (commits || []).map((c) => ({
+        id: c.id,
+        shortId: c.short_id,
+        title: c.title,
+        message: c.message,
+        author: c.author_name,
+        authorEmail: c.author_email,
+        date: c.committed_date,
+        webUrl: c.web_url,
+      })),
+    });
+  } catch (e) {
+    console.error('getProjectCommits error:', e.message);
+    res.status(e.status || 500).json({ error: e.message });
+  }
+}
+
+async function getProjectTags(req, res) {
+  const { gitlabUrl, token, projectPath, projectId } = req.body;
+  try {
+    const pId = projectId || (await gitlabApi.getProjectInfo(gitlabUrl, token, projectPath)).id;
+    const tags = await gitlabApi.getTags(gitlabUrl, token, pId);
+    res.json({
+      tags: (tags || []).map((t) => ({
+        name: t.name,
+        message: t.message,
+        target: t.target,
+        commit: t.commit ? {
+          id: t.commit.id,
+          shortId: t.commit.short_id,
+          title: t.commit.title,
+          author: t.commit.author_name,
+          date: t.commit.committed_date,
+        } : null,
+        release: t.release ? {
+          tagName: t.release.tag_name,
+          description: t.release.description,
+        } : null,
+      })),
+    });
+  } catch (e) {
+    console.error('getProjectTags error:', e.message);
+    res.status(e.status || 500).json({ error: e.message });
+  }
+}
+
+async function getBranchStatus(req, res) {
+  const { gitlabUrl, token, projectPath, projectId, ref, subtreePath, basePath, packageJsonPath } = req.body;
+  try {
+    const pId = projectId || (await gitlabApi.getProjectInfo(gitlabUrl, token, projectPath)).id;
+    const pkgPath = packageJsonPath || 'package.json';
+
+    const [commit, tag, pkgVersion] = await Promise.all([
+      gitlabApi.getLatestCommit(gitlabUrl, token, pId, ref),
+      gitlabApi.getLatestTag(gitlabUrl, token, pId).catch(() => null),
+      gitlabApi.getPackageVersion(gitlabUrl, token, pId, ref, pkgPath),
+    ]);
+
+    const result = {
+      defaultBranch: ref,
+      commitSha: commit ? commit.short_id : null,
+      commitFullSha: commit ? commit.id : null,
+      commitDate: commit ? commit.committed_date : null,
+      commitAuthor: commit ? commit.author_name : null,
+      commitTitle: commit ? commit.title : null,
+      latestTag: tag ? tag.name : null,
+      packageVersion: pkgVersion,
+    };
+
+    if (subtreePath && basePath) {
+      try {
+        result.subtree = await getSubtreeStatus(gitlabUrl, token, pId, ref, subtreePath, basePath, pkgPath);
+      } catch (e) {
+        result.subtree = { error: e.message };
+      }
+    }
+
+    res.json(result);
+  } catch (e) {
+    console.error('getBranchStatus error:', e.message);
+    res.status(e.status || 500).json({ error: e.message });
+  }
+}
+
+module.exports = {
+  testConnection,
+  checkAll,
+  listProjects,
+  getProjectMergeRequests,
+  getProjectIssues,
+  getProjectBranches,
+  getProjectCommits,
+  getProjectTags,
+  getBranchStatus,
+};

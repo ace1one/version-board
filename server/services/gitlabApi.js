@@ -40,7 +40,7 @@ async function getProjectInfo(gitlabUrl, token, projectPath) {
 async function getLatestCommit(gitlabUrl, token, projectId, ref) {
   const commits = await gitlabGet(
     gitlabUrl, token,
-    `/projects/${projectId}/repository/commits?ref_name=${encodeURIComponent(ref)}&per_page=1`
+    `/projects/${encodeURIComponent(projectId)}/repository/commits?ref_name=${encodeURIComponent(ref)}&per_page=1`
   );
   return commits[0] || null;
 }
@@ -48,7 +48,7 @@ async function getLatestCommit(gitlabUrl, token, projectId, ref) {
 async function getLatestTag(gitlabUrl, token, projectId) {
   const tags = await gitlabGet(
     gitlabUrl, token,
-    `/projects/${projectId}/repository/tags?per_page=1&order_by=updated&sort=desc`
+    `/projects/${encodeURIComponent(projectId)}/repository/tags?per_page=1&order_by=updated&sort=desc`
   );
   return tags[0] || null;
 }
@@ -57,7 +57,7 @@ async function getPackageVersion(gitlabUrl, token, projectId, ref, filePath) {
   try {
     const text = await gitlabGetRawText(
       gitlabUrl, token,
-      `/projects/${projectId}/repository/files/${encodeURIComponent(filePath)}/raw?ref=${encodeURIComponent(ref)}`
+      `/projects/${encodeURIComponent(projectId)}/repository/files/${encodeURIComponent(filePath)}/raw?ref=${encodeURIComponent(ref)}`
     );
     const json = JSON.parse(text);
     return json.version || null;
@@ -66,31 +66,58 @@ async function getPackageVersion(gitlabUrl, token, projectId, ref, filePath) {
   }
 }
 
+async function getLatestPipeline(gitlabUrl, token, projectId, ref) {
+  try {
+    const pipelines = await gitlabGet(
+      gitlabUrl, token,
+      `/projects/${encodeURIComponent(projectId)}/pipelines?ref=${encodeURIComponent(ref)}&per_page=1`
+    );
+    return pipelines[0] || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function searchCommits(gitlabUrl, token, projectId, query) {
   return gitlabGet(
     gitlabUrl, token,
-    `/projects/${projectId}/search?scope=commits&search=${encodeURIComponent(query)}`
+    `/projects/${encodeURIComponent(projectId)}/search?scope=commits&search=${encodeURIComponent(query)}`
   );
 }
 
 async function getCommitsByPath(gitlabUrl, token, projectId, ref, subtreePath, page, perPage = 100) {
   return gitlabGet(
     gitlabUrl, token,
-    `/projects/${projectId}/repository/commits?path=${encodeURIComponent(subtreePath)}&ref_name=${encodeURIComponent(ref)}&per_page=${perPage}&page=${page}`
+    `/projects/${encodeURIComponent(projectId)}/repository/commits?path=${encodeURIComponent(subtreePath)}&ref_name=${encodeURIComponent(ref)}&per_page=${perPage}&page=${page}`
   );
 }
 
 async function compareCommits(gitlabUrl, token, projectId, from, to) {
   return gitlabGet(
     gitlabUrl, token,
-    `/projects/${projectId}/repository/compare?from=${from}&to=${encodeURIComponent(to)}`
+    `/projects/${encodeURIComponent(projectId)}/repository/compare?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
   );
 }
 
-async function getTags(gitlabUrl, token, projectId, page, perPage = 100) {
+async function getBranches(gitlabUrl, token, projectId, page = 1, perPage = 100) {
   return gitlabGet(
     gitlabUrl, token,
-    `/projects/${projectId}/repository/tags?per_page=${perPage}&page=${page}`
+    `/projects/${encodeURIComponent(projectId)}/repository/branches?per_page=${perPage}&page=${page}`
+  );
+}
+
+async function getCommits(gitlabUrl, token, projectId, ref, page = 1, perPage = 30) {
+  const refParam = ref ? `&ref_name=${encodeURIComponent(ref)}` : '';
+  return gitlabGet(
+    gitlabUrl, token,
+    `/projects/${encodeURIComponent(projectId)}/repository/commits?per_page=${perPage}&page=${page}${refParam}`
+  );
+}
+
+async function getTags(gitlabUrl, token, projectId, page = 1, perPage = 100) {
+  return gitlabGet(
+    gitlabUrl, token,
+    `/projects/${encodeURIComponent(projectId)}/repository/tags?per_page=${perPage}&page=${page}&order_by=updated&sort=desc`
   );
 }
 
@@ -112,21 +139,21 @@ async function listProjects(gitlabUrl, token, search, page = 1, perPage = 20) {
 async function getMergeRequests(gitlabUrl, token, projectId, state = 'opened', page = 1, perPage = 10) {
   return gitlabGet(
     gitlabUrl, token,
-    `/projects/${projectId}/merge_requests?state=${state}&order_by=updated_at&sort=desc&per_page=${perPage}&page=${page}`
+    `/projects/${encodeURIComponent(projectId)}/merge_requests?state=${state}&order_by=updated_at&sort=desc&per_page=${perPage}&page=${page}`
   );
 }
 
 async function getIssues(gitlabUrl, token, projectId, state = 'opened', page = 1, perPage = 10) {
   return gitlabGet(
     gitlabUrl, token,
-    `/projects/${projectId}/issues?state=${state}&order_by=updated_at&sort=desc&per_page=${perPage}&page=${page}`
+    `/projects/${encodeURIComponent(projectId)}/issues?state=${state}&order_by=updated_at&sort=desc&per_page=${perPage}&page=${page}`
   );
 }
 
 async function getRecentActivity(gitlabUrl, token, projectId, perPage = 10) {
   return gitlabGet(
     gitlabUrl, token,
-    `/projects/${projectId}/events?action=pushed_event&per_page=${perPage}`
+    `/projects/${encodeURIComponent(projectId)}/events?action=pushed_event&per_page=${perPage}`
   );
 }
 
@@ -136,9 +163,12 @@ module.exports = {
   getLatestCommit,
   getLatestTag,
   getPackageVersion,
+  getLatestPipeline,
   searchCommits,
   getCommitsByPath,
   compareCommits,
+  getBranches,
+  getCommits,
   getTags,
   listProjects,
   getMergeRequests,

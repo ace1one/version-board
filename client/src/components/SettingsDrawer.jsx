@@ -5,9 +5,13 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
   const [token, setToken] = useState(config.token || '');
   const [rememberToken, setRememberToken] = useState(!!config.rememberToken);
   const [packageJsonPath, setPackageJsonPath] = useState(config.packageJsonPath || 'package.json');
+  const [defaultSubtreePath, setDefaultSubtreePath] = useState(config.defaultSubtreePath || 'projects/base-client');
+  const [defaultSubtreeBasePath, setDefaultSubtreeBasePath] = useState(config.defaultSubtreeBasePath || 'fonebank/banksmart-client-web');
   const [projects, setProjects] = useState(config.projects && config.projects.length > 0 ? [...config.projects] : []);
   const [testResult, setTestResult] = useState('');
   const [testResultClass, setTestResultClass] = useState('');
+  const [newlyAddedKey, setNewlyAddedKey] = useState(null);
+  const [projectFilter, setProjectFilter] = useState('');
 
   const [browseSearch, setBrowseSearch] = useState('');
   const [browseResults, setBrowseResults] = useState([]);
@@ -41,35 +45,18 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
 
   const detectSubtreeInfo = (repo) => {
     const path = repo.path_with_namespace || repo.path;
-    const isSubtree = repo.hasSubtree || 
-                      path.includes('bankxp') || 
+    const isSubtree = repo.hasSubtree ||
+                      path.includes('bankxp') ||
                       path.includes('banksmart') ||
                       path.split('/').length > 2;
-    
-    let subtreePath = '';
-    let basePath = '';
-    
-    if (isSubtree) {
-      if (path.includes('/bankxp/')) {
-        const parts = path.split('/');
-        if (parts.length >= 3) {
-          basePath = `${parts[0]}/banksmart-client-web`;
-          subtreePath = `projects/${parts[parts.length - 1]}`;
-        }
-      } else if (path.includes('banksmart-client-web')) {
-        basePath = path;
-        subtreePath = 'projects/base-client';
-      } else {
-        const parts = path.split('/');
-        const projectName = parts[parts.length - 1];
-        basePath = parts.slice(0, -1).join('/') + '/banksmart-client-web';
-        subtreePath = `projects/${projectName}`;
-      }
-    }
-    
-    return { isSubtree, subtreePath, basePath };
+
+    const subPath = (defaultSubtreePath && defaultSubtreePath.trim()) || 'projects/base-client';
+    const bPath = (defaultSubtreeBasePath && defaultSubtreeBasePath.trim()) || 'fonebank/banksmart-client-web';
+
+    return { isSubtree, subtreePath: subPath, basePath: bPath };
   };
 
+  // Add newly selected repo to TOP of the list
   const addFromBrowse = (repo) => {
     const fullPath = repo.path_with_namespace || repo.path;
     const alreadyExists = projects.some((p) => p.path === fullPath);
@@ -77,27 +64,55 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
 
     const { isSubtree, subtreePath, basePath } = detectSubtreeInfo(repo);
 
-    setProjects([...projects, {
+    const newProject = {
       name: repo.name,
       path: fullPath,
       type: isSubtree ? 'subtree' : 'normal',
       subtreePath: subtreePath,
       basePath: basePath,
-    }]);
+    };
+
+    setProjects([newProject, ...projects]);
+    setNewlyAddedKey(fullPath);
+    setTimeout(() => setNewlyAddedKey(null), 3000);
   };
 
+  // Add new blank manual project to TOP of the list
   const addProject = () => {
-    setProjects([...projects, { name: '', path: '', type: 'normal', subtreePath: '', basePath: '' }]);
+    const subPath = (defaultSubtreePath && defaultSubtreePath.trim()) || 'projects/base-client';
+    const bPath = (defaultSubtreeBasePath && defaultSubtreeBasePath.trim()) || 'fonebank/banksmart-client-web';
+    const newProject = {
+      name: '',
+      path: '',
+      type: 'normal',
+      subtreePath: subPath,
+      basePath: bPath,
+    };
+    setProjects([newProject, ...projects]);
   };
 
   const removeProject = (idx) => {
     setProjects(projects.filter((_, i) => i !== idx));
   };
 
-  const updateProject = (idx, field, value) => {
+  const moveProject = (fromIdx, toIdx) => {
+    if (toIdx < 0 || toIdx >= projects.length) return;
     const updated = [...projects];
-    updated[idx] = { ...updated[idx], [field]: value };
+    const [moved] = updated.splice(fromIdx, 1);
+    updated.splice(toIdx, 0, moved);
     setProjects(updated);
+  };
+
+  const updateProject = (idx, fieldOrObj, value) => {
+    setProjects((prev) => {
+      const updated = [...prev];
+      if (typeof fieldOrObj === 'object') {
+        updated[idx] = { ...updated[idx], ...fieldOrObj };
+      } else {
+        updated[idx] = { ...updated[idx], [fieldOrObj]: value };
+      }
+      return updated;
+    });
   };
 
   const handleTestConnection = async () => {
@@ -123,26 +138,86 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
     }
   };
 
+  const handleExportConfig = () => {
+    const exportData = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      gitlabUrl: gitlabUrl.trim(),
+      packageJsonPath: packageJsonPath.trim() || 'package.json',
+      defaultSubtreePath: defaultSubtreePath.trim() || 'projects/base-client',
+      defaultSubtreeBasePath: defaultSubtreeBasePath.trim() || 'fonebank/banksmart-client-web',
+      projects: projects.filter((p) => p.path && p.path.trim()),
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `version-board-config-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportConfig = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const imported = JSON.parse(event.target.result);
+        if (imported.gitlabUrl) setGitlabUrl(imported.gitlabUrl);
+        if (imported.packageJsonPath) setPackageJsonPath(imported.packageJsonPath);
+        if (imported.defaultSubtreePath) setDefaultSubtreePath(imported.defaultSubtreePath);
+        if (imported.defaultSubtreeBasePath) setDefaultSubtreeBasePath(imported.defaultSubtreeBasePath);
+        if (Array.isArray(imported.projects)) {
+          setProjects(imported.projects);
+          alert(`Successfully loaded ${imported.projects.length} project(s) from JSON config! Click "Save & close" to apply.`);
+        }
+      } catch (err) {
+        alert('Invalid JSON configuration file: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
   const handleSave = () => {
+    const defPath = defaultSubtreePath.trim() || 'projects/base-client';
+    const defBase = defaultSubtreeBasePath.trim() || 'fonebank/banksmart-client-web';
     onSave({
       gitlabUrl: gitlabUrl.trim(),
       token: token.trim(),
       rememberToken,
       packageJsonPath: packageJsonPath.trim() || 'package.json',
-      projects: projects.filter((p) => p.path.trim()),
+      defaultSubtreePath: defPath,
+      defaultSubtreeBasePath: defBase,
+      projects: projects
+        .filter((p) => p.path && p.path.trim())
+        .map((p) => {
+          if (p.type === 'subtree') {
+            return {
+              ...p,
+              subtreePath: (p.subtreePath && p.subtreePath.trim()) || defPath,
+              basePath: (p.basePath && p.basePath.trim()) || defBase,
+            };
+          }
+          return p;
+        }),
     });
   };
+
+  const subtreeCount = projects.filter((p) => p.type === 'subtree').length;
+  const normalCount = projects.length - subtreeCount;
+
+  // Filter projects if search term entered in added section
+  const visibleProjects = projects.filter((p) => {
+    if (!projectFilter) return true;
+    const q = projectFilter.toLowerCase();
+    return (p.name || '').toLowerCase().includes(q) || (p.path || '').toLowerCase().includes(q);
+  });
 
   return (
     <>
       <style>{`
-        .card-path {
-          font-family: var(--font-mono), monospace;
-          font-size: 11px;
-          color: #6b7280;
-          margin: 4px 0 0 0;
-          padding: 0;
-        }
         .search-container {
           margin-bottom: 24px;
         }
@@ -161,38 +236,39 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
           width: 100%;
           padding: 10px 12px 10px 36px;
           background: #0d1117;
-          border: 1px solid #30363d;
-          border-radius: 6px;
-          color: #e6edf3;
-          font-size: 14px;
+          border: 1px solid var(--hairline);
+          border-radius: 8px;
+          color: var(--text);
+          font-size: 13.5px;
           box-sizing: border-box;
+          transition: all 0.2s ease;
         }
         .search-input:focus {
-          // outline: none;
-          border-color: #58a6ff;
-          // box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+          outline: none;
+          border-color: var(--accent);
+          box-shadow: 0 0 0 3px rgba(79, 209, 165, 0.15);
         }
         .search-input::placeholder {
-          color: #8b949e;
+          color: var(--text-faint);
         }
         .repo-card {
           display: flex;
           justify-content: space-between;
-          align-items: flex-start;
-          padding: 12px 16px;
-          border: 1px solid #30363d;
-          border-radius: 6px;
+          align-items: center;
+          padding: 10px 14px;
+          border: 1px solid var(--hairline);
+          border-radius: 8px;
           margin-bottom: 8px;
-          background: #161b22;
+          background: var(--panel-raised);
           transition: all 0.15s ease;
         }
         .repo-card:hover {
-          border-color: #58a6ff;
-          background: #1c2129;
+          border-color: var(--accent);
+          background: #202b33;
         }
         .repo-card.already-added {
-          opacity: 0.5;
-          background: #0d1117;
+          opacity: 0.6;
+          background: var(--panel);
         }
         .repo-info {
           flex: 1;
@@ -201,31 +277,43 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
         }
         .repo-name {
           font-weight: 600;
-          font-size: 14px;
-          color: #e6edf3;
+          font-size: 13.5px;
+          color: var(--text);
           display: flex;
           align-items: center;
           gap: 8px;
         }
+        .card-path {
+          font-family: var(--font-mono), monospace;
+          font-size: 11px;
+          color: var(--text-muted);
+          margin: 3px 0 0 0;
+          padding: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
         .subtree-badge {
           font-size: 10px;
-          padding: 2px 6px;
-          border-radius: 3px;
-          background: #58a6ff;
-          color: #0d1117;
+          padding: 2px 7px;
+          border-radius: 4px;
+          background: rgba(79, 209, 165, 0.15);
+          color: var(--accent);
+          border: 1px solid rgba(79, 209, 165, 0.3);
           font-weight: 700;
           text-transform: uppercase;
+          letter-spacing: 0.04em;
         }
         .repo-meta {
           display: flex;
           align-items: center;
           gap: 8px;
-          margin-top: 6px;
+          margin-top: 5px;
         }
         .visibility-badge {
-          font-size: 10px;
-          padding: 2px 6px;
-          border-radius: 3px;
+          font-size: 9.5px;
+          padding: 1px 6px;
+          border-radius: 4px;
           font-weight: 600;
           text-transform: uppercase;
         }
@@ -233,140 +321,321 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
         .visibility-badge.internal { background: #a371f7; color: #fff; }
         .visibility-badge.public { background: #3fb950; color: #0d1117; }
         .repo-desc {
-          font-size: 12px;
-          color: #8b949e;
+          font-size: 11.5px;
+          color: var(--text-faint);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
-          max-width: 400px;
+          max-width: 320px;
         }
         .btn-add {
-          padding: 6px 16px;
-          font-size: 13px;
+          padding: 6px 14px;
+          font-size: 12.5px;
           font-weight: 600;
           white-space: nowrap;
-          background: #238636;
-          color: #fff;
-          border: 1px solid #2ea043;
+          background: var(--accent);
+          color: #0E1316;
+          border: none;
           border-radius: 6px;
           cursor: pointer;
+          transition: all 0.15s ease;
         }
         .btn-add:hover {
-          background: #2ea043;
+          background: #65dfb7;
+          transform: translateY(-1px);
         }
+        .added-tag {
+          font-size: 11.5px;
+          color: var(--text-faint);
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          font-weight: 600;
+        }
+
+        /* ---------- Projects Section ---------- */
         .projects-section {
-          border-top: 1px solid #30363d;
-          padding-top: 20px;
-          margin-top: 8px;
+          border-top: 1px solid var(--hairline);
+          padding-top: 22px;
+          margin-top: 12px;
         }
         .projects-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 16px;
+          margin-bottom: 12px;
+          flex-wrap: wrap;
+          gap: 10px;
+        }
+        .projects-title-wrap {
+          display: flex;
+          align-items: center;
+          gap: 8px;
         }
         .projects-title {
           font-size: 12px;
-          font-weight: 700;
-          color: #8b949e;
+          font-weight: 800;
+          color: var(--text);
           text-transform: uppercase;
-          letter-spacing: 0.5px;
+          letter-spacing: 0.06em;
+        }
+        .count-pill {
+          font-size: 11px;
+          background: var(--panel-raised);
+          border: 1px solid var(--hairline);
+          padding: 2px 8px;
+          border-radius: 12px;
+          color: var(--text-muted);
+          font-weight: 600;
+        }
+        .count-pill.accent {
+          color: var(--accent);
+          border-color: rgba(79, 209, 165, 0.3);
+          background: rgba(79, 209, 165, 0.08);
         }
         .btn-add-manual {
-          padding: 8px 16px;
-          font-size: 13px;
+          padding: 6px 14px;
+          font-size: 12.5px;
           font-weight: 600;
-          background: #21262d;
-          color: #e6edf3;
-          border: 1px solid #30363d;
+          background: var(--panel-raised);
+          color: var(--accent);
+          border: 1px solid rgba(79, 209, 165, 0.35);
           border-radius: 6px;
           cursor: pointer;
+          transition: all 0.15s;
         }
         .btn-add-manual:hover {
-          background: #30363d;
-          border-color: #8b949e;
+          background: rgba(79, 209, 165, 0.12);
+          border-color: var(--accent);
         }
-        .project-card {
-          background: #161b22;
-          border: 1px solid #30363d;
-          border-radius: 8px;
-          padding: 16px;
-          margin-bottom: 12px;
-          position: relative;
-        }
-        .project-card input[type="text"] {
+        .projects-filter-input {
           width: 100%;
-          padding: 10px 12px;
-          background: #0d1117;
-          border: 1px solid #30363d;
+          padding: 7px 12px;
+          background: var(--bg);
+          border: 1px solid var(--hairline);
           border-radius: 6px;
-          color: #e6edf3;
-          font-size: 14px;
-          font-family: var(--font-mono), monospace;
-          margin-bottom: 10px;
+          color: var(--text);
+          font-size: 12px;
+          margin-bottom: 12px;
           box-sizing: border-box;
         }
-        .project-card input[type="text"]:focus {
+        .projects-filter-input:focus {
           outline: none;
-          border-color: #58a6ff;
-          box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+          border-color: var(--accent);
         }
-        .project-card input[type="text"]::placeholder {
-          color: #484f58;
+
+        /* ---------- Enhanced Project Card Row ---------- */
+        .proj-card {
+          background: var(--panel-raised);
+          border: 1px solid var(--hairline);
+          border-radius: 10px;
+          padding: 14px;
+          margin-bottom: 12px;
+          position: relative;
+          transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
         }
-        .project-type-row {
-          display: flex;
-          gap: 20px;
-          margin-bottom: 10px;
-          font-size: 13px;
-          color: #8b949e;
+        .proj-card:hover {
+          border-color: rgba(79, 209, 165, 0.35);
         }
-        .project-type-row label {
+        .proj-card.just-added {
+          border-color: var(--accent);
+          box-shadow: 0 0 16px rgba(79, 209, 165, 0.25);
+          animation: highlightPulse 2s ease-out;
+        }
+        @keyframes highlightPulse {
+          0% { transform: scale(1.02); }
+          50% { transform: scale(1.00); }
+          100% { }
+        }
+        .proj-card-top {
           display: flex;
           align-items: center;
-          gap: 6px;
-          cursor: pointer;
-        }
-        .project-type-row input[type="radio"] {
-          width: 14px;
-          height: 14px;
-          accent-color: #58a6ff;
-        }
-        .subtree-fields {
-          display: flex;
+          justify-content: space-between;
           gap: 10px;
-          margin-top: 10px;
-          padding-top: 10px;
-          border-top: 1px dashed #30363d;
+          margin-bottom: 10px;
         }
-        .subtree-fields input {
+        .proj-index-badge {
+          font-size: 10.5px;
+          font-family: var(--font-mono);
+          background: var(--bg);
+          color: var(--text-faint);
+          padding: 2px 7px;
+          border-radius: 4px;
+          border: 1px solid var(--hairline);
+          font-weight: 600;
+        }
+        .proj-name-input {
           flex: 1;
-          margin-bottom: 0;
+          background: var(--bg);
+          border: 1px solid var(--hairline);
+          border-radius: 6px;
+          color: var(--text);
+          font-size: 13.5px;
+          font-weight: 600;
+          padding: 7px 10px;
+          box-sizing: border-box;
+          transition: border-color 0.15s;
         }
-        .btn-remove {
-          position: absolute;
-          top: 12px;
-          right: 12px;
+        .proj-name-input:focus {
+          outline: none;
+          border-color: var(--accent);
+          background: #0E1316;
+        }
+        .proj-top-actions {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+        .btn-order {
           background: transparent;
-          border: 1px solid #30363d;
-          color: #8b949e;
+          border: 1px solid var(--hairline);
+          color: var(--text-faint);
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 11px;
+          padding: 4px 6px;
+          line-height: 1;
+        }
+        .btn-order:hover:not(:disabled) {
+          color: var(--text);
+          border-color: var(--text-muted);
+        }
+        .btn-order:disabled {
+          opacity: 0.3;
+          cursor: default;
+        }
+        .btn-delete-card {
+          background: transparent;
+          border: 1px solid transparent;
+          color: var(--text-faint);
           cursor: pointer;
           font-size: 14px;
           padding: 4px 8px;
           border-radius: 6px;
           transition: all 0.15s;
         }
-        .btn-remove:hover {
-          color: #f85149;
-          border-color: #f85149;
-          background: rgba(248, 81, 73, 0.1);
+        .btn-delete-card:hover {
+          color: var(--danger);
+          background: rgba(232, 96, 122, 0.12);
+          border-color: rgba(232, 96, 122, 0.3);
         }
-        .empty-state {
-          padding: 24px;
-          text-align: center;
-          color: #8b949e;
-          border: 1px dashed #30363d;
+
+        .proj-path-row {
+          margin-bottom: 10px;
+        }
+        .proj-input-label {
+          display: block;
+          font-size: 10.5px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: var(--text-faint);
+          margin-bottom: 4px;
+        }
+        .proj-path-input {
+          width: 100%;
+          background: var(--bg);
+          border: 1px solid var(--hairline);
           border-radius: 6px;
+          color: var(--text);
+          font-family: var(--font-mono), monospace;
+          font-size: 12px;
+          padding: 7px 10px;
+          box-sizing: border-box;
+          transition: border-color 0.15s;
+        }
+        .proj-path-input:focus {
+          outline: none;
+          border-color: var(--accent);
+        }
+
+        /* Segmented Type Toggle */
+        .type-segmented {
+          display: flex;
+          background: var(--bg);
+          padding: 3px;
+          border-radius: 7px;
+          border: 1px solid var(--hairline);
+          gap: 4px;
+          margin-bottom: 10px;
+        }
+        .type-segmented-btn {
+          flex: 1;
+          padding: 5px 10px;
+          font-size: 11.5px;
+          font-weight: 600;
+          text-align: center;
+          border-radius: 5px;
+          background: transparent;
+          color: var(--text-muted);
+          border: none;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          transition: all 0.15s ease;
+        }
+        .type-segmented-btn.active {
+          background: var(--panel-raised);
+          color: var(--accent);
+          box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+        }
+        .type-segmented-btn.active.normal {
+          color: var(--text);
+        }
+
+        /* Subtree nested box */
+        .subtree-config-box {
+          background: rgba(79, 209, 165, 0.04);
+          border: 1px solid rgba(79, 209, 165, 0.2);
+          border-left: 3px solid var(--accent);
+          border-radius: 6px;
+          padding: 10px 12px;
+          margin-top: 8px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .subtree-config-title {
+          font-size: 11px;
+          font-weight: 700;
+          color: var(--accent);
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+        .subtree-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
+        }
+        @media (max-width: 480px) {
+          .subtree-grid { grid-template-columns: 1fr; }
+        }
+        .subtree-field input {
+          width: 100%;
+          background: var(--bg);
+          border: 1px solid var(--hairline);
+          border-radius: 5px;
+          color: var(--text);
+          font-family: var(--font-mono), monospace;
+          font-size: 11.5px;
+          padding: 6px 8px;
+          box-sizing: border-box;
+        }
+        .subtree-field input:focus {
+          outline: none;
+          border-color: var(--accent);
+        }
+        .empty-state-box {
+          padding: 28px 16px;
+          text-align: center;
+          color: var(--text-faint);
+          border: 1px dashed var(--hairline);
+          border-radius: 8px;
           font-size: 13px;
         }
       `}</style>
@@ -375,10 +644,11 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
         <div className="drawer" onClick={(e) => e.stopPropagation()}>
           <div className="drawer-head">
             <h2>Settings</h2>
-            <button className="btn btn-ghost btn-icon" onClick={onClose}>✕</button>
+            <button className="btn btn-ghost btn-icon" onClick={onClose} title="Close">✕</button>
           </div>
 
           <div className="drawer-body">
+            {/* GitLab Connection */}
             <fieldset className="field-group">
               <legend>GitLab connection</legend>
               <label>
@@ -399,6 +669,7 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
               </div>
             </fieldset>
 
+            {/* package.json path */}
             <fieldset className="field-group">
               <legend>package.json path (optional)</legend>
               <label>
@@ -407,13 +678,43 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
               </label>
             </fieldset>
 
-            {/* Search Repositories */}
+            {/* Default subtree base */}
+            <fieldset className="field-group">
+              <legend>Default subtree base (applied when adding repos)</legend>
+              <label>
+                Subtree prefix inside each repo
+                <input type="text" placeholder="projects/base-client" value={defaultSubtreePath} onChange={(e) => setDefaultSubtreePath(e.target.value)} />
+              </label>
+              <label>
+                Base project path
+                <input type="text" placeholder="fonebank/banksmart-client-web" value={defaultSubtreeBasePath} onChange={(e) => setDefaultSubtreeBasePath(e.target.value)} />
+              </label>
+            </fieldset>
+
+            {/* Team Configuration Sharing */}
+            <fieldset className="field-group">
+              <legend>Team Configuration Sharing</legend>
+              <p style={{ margin: '0 0 10px 0', fontSize: '12px', color: 'var(--text-muted)' }}>
+                Export your configured bank repositories to share with teammates, or import an existing team preset JSON.
+              </p>
+              <div className="team-share-box">
+                <button type="button" className="btn-share" onClick={handleExportConfig}>
+                  ⬇ Export JSON
+                </button>
+                <label className="btn-share" style={{ margin: 0, cursor: 'pointer' }}>
+                  ⬆ Import JSON
+                  <input type="file" accept=".json" onChange={handleImportConfig} style={{ display: 'none' }} />
+                </label>
+              </div>
+            </fieldset>
+
+            {/* Search Repositories to Add */}
             <div className="search-container">
               <div className="search-input-wrapper">
                 <span className="search-icon">🔍</span>
                 <input
                   type="text"
-                  placeholder="Search repositories..."
+                  placeholder="Search and add GitLab repositories..."
                   value={browseSearch}
                   onChange={(e) => handleBrowseSearch(e.target.value)}
                   className="search-input"
@@ -422,13 +723,13 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
               </div>
               
               {browseLoading && (
-                <div style={{ padding: '12px', color: '#8b949e', fontSize: '13px' }}>
-                  Searching...
+                <div style={{ padding: '12px', color: 'var(--text-muted)', fontSize: '12.5px' }}>
+                  Searching repositories...
                 </div>
               )}
               
               {!browseLoading && browseResults.length > 0 && (
-                <div style={{ marginTop: '12px' }}>
+                <div style={{ marginTop: '10px' }}>
                   {browseResults.map((repo) => {
                     const fullPath = repo.path_with_namespace || repo.path;
                     const alreadyAdded = projects.some((p) => p.path === fullPath);
@@ -439,7 +740,7 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
                         <div className="repo-info">
                           <div className="repo-name">
                             {repo.name}
-                            {isSubtree && !alreadyAdded && <span className="subtree-badge">Subtree</span>}
+                            {isSubtree && <span className="subtree-badge">Subtree</span>}
                           </div>
                           <p className="card-path">{fullPath}</p>
                           <div className="repo-meta">
@@ -450,10 +751,10 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
                           </div>
                         </div>
                         {alreadyAdded ? (
-                          <span style={{ color: '#8b949e', fontSize: '12px' }}>Added</span>
+                          <span className="added-tag">✓ Added</span>
                         ) : (
                           <button className="btn-add" onClick={() => addFromBrowse(repo)}>
-                            Add
+                            + Add
                           </button>
                         )}
                       </div>
@@ -463,24 +764,56 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
               )}
               
               {!browseLoading && browseSearch && browseResults.length === 0 && (
-                <div className="empty-state">No repositories found</div>
+                <div className="empty-state-box">No repositories found matching "{browseSearch}"</div>
               )}
             </div>
 
-            {/* Added Projects */}
+            {/* Added Projects List */}
             <div className="projects-section">
               <div className="projects-header">
-                <span className="projects-title">Added Projects ({projects.length})</span>
-                <button className="btn-add-manual" onClick={addProject}>+ Add manually</button>
+                <div className="projects-title-wrap">
+                  <span className="projects-title">Added Projects</span>
+                  <span className="count-pill accent">{projects.length}</span>
+                  {subtreeCount > 0 && (
+                    <span className="count-pill">{subtreeCount} subtree</span>
+                  )}
+                </div>
+                <button className="btn-add-manual" onClick={addProject}>+ Add blank</button>
               </div>
+
+              {projects.length > 4 && (
+                <input
+                  type="text"
+                  placeholder="Filter added projects..."
+                  value={projectFilter}
+                  onChange={(e) => setProjectFilter(e.target.value)}
+                  className="projects-filter-input"
+                />
+              )}
               
               <div className="project-list">
-                {projects.map((p, idx) => (
-                  <ProjectRow key={idx} project={p} idx={idx} onUpdate={updateProject} onRemove={removeProject} />
-                ))}
+                {visibleProjects.map((p, idx) => {
+                  const actualIdx = projects.indexOf(p);
+                  const isJustAdded = newlyAddedKey && p.path === newlyAddedKey;
+
+                  return (
+                    <ProjectRow
+                      key={p.path || actualIdx}
+                      project={p}
+                      idx={actualIdx}
+                      totalCount={projects.length}
+                      isJustAdded={isJustAdded}
+                      defaultSubtreePath={defaultSubtreePath}
+                      defaultSubtreeBasePath={defaultSubtreeBasePath}
+                      onUpdate={updateProject}
+                      onRemove={removeProject}
+                      onMove={moveProject}
+                    />
+                  );
+                })}
                 {projects.length === 0 && (
-                  <div className="empty-state">
-                    No projects added yet. Search above to add repositories.
+                  <div className="empty-state-box">
+                    No projects added yet. Search above to add repositories to your board.
                   </div>
                 )}
               </div>
@@ -496,51 +829,116 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
   );
 }
 
-function ProjectRow({ project, idx, onUpdate, onRemove }) {
-  const showSubtree = project.type === 'subtree';
+function ProjectRow({
+  project,
+  idx,
+  totalCount,
+  isJustAdded,
+  defaultSubtreePath,
+  defaultSubtreeBasePath,
+  onUpdate,
+  onRemove,
+  onMove,
+}) {
+  const isSubtree = project.type === 'subtree';
 
   return (
-    <div className="project-card">
-      <button className="btn-remove" onClick={() => onRemove(idx)} title="Remove">🗑</button>
-      
-      <input 
-        type="text" 
-        placeholder="Display name" 
-        value={project.name} 
-        onChange={(e) => onUpdate(idx, 'name', e.target.value)} 
-      />
-      <input 
-        type="text" 
-        placeholder="namespace/project-path" 
-        value={project.path} 
-        onChange={(e) => onUpdate(idx, 'path', e.target.value)} 
-      />
-      
-      <div className="project-type-row">
-        <label>
-          <input type="radio" name={`type-${idx}`} value="normal" checked={project.type !== 'subtree'} onChange={() => onUpdate(idx, 'type', 'normal')} /> 
-          Normal
-        </label>
-        <label>
-          <input type="radio" name={`type-${idx}`} value="subtree" checked={project.type === 'subtree'} onChange={() => onUpdate(idx, 'type', 'subtree')} /> 
-          Has subtree base
-        </label>
+    <div className={`proj-card ${isJustAdded ? 'just-added' : ''}`}>
+      <div className="proj-card-top">
+        <span className="proj-index-badge">#{idx + 1}</span>
+        <input 
+          type="text" 
+          placeholder="Display Name (e.g. Prabhu Bank)" 
+          value={project.name} 
+          onChange={(e) => onUpdate(idx, 'name', e.target.value)} 
+          className="proj-name-input"
+        />
+        <div className="proj-top-actions">
+          <button 
+            className="btn-order" 
+            disabled={idx === 0} 
+            onClick={() => onMove(idx, idx - 1)}
+            title="Move Up"
+          >
+            ▲
+          </button>
+          <button 
+            className="btn-order" 
+            disabled={idx === totalCount - 1} 
+            onClick={() => onMove(idx, idx + 1)}
+            title="Move Down"
+          >
+            ▼
+          </button>
+          <button 
+            className="btn-delete-card" 
+            onClick={() => onRemove(idx)} 
+            title="Remove repository"
+          >
+            🗑
+          </button>
+        </div>
       </div>
-      
-      {showSubtree && (
-        <div className="subtree-fields">
-          <input 
-            type="text" 
-            placeholder="Subtree prefix (e.g. projects/base-client)" 
-            value={project.subtreePath} 
-            onChange={(e) => onUpdate(idx, 'subtreePath', e.target.value)} 
-          />
-          <input 
-            type="text" 
-            placeholder="Base project path" 
-            value={project.basePath} 
-            onChange={(e) => onUpdate(idx, 'basePath', e.target.value)} 
-          />
+
+      <div className="proj-path-row">
+        <label className="proj-input-label">GitLab Path</label>
+        <input 
+          type="text" 
+          placeholder="namespace/project-name (e.g. fonebank/bankxp/rbb)" 
+          value={project.path} 
+          onChange={(e) => onUpdate(idx, 'path', e.target.value)} 
+          className="proj-path-input"
+        />
+      </div>
+
+      {/* Segmented Type Toggle */}
+      <div className="type-segmented">
+        <button
+          type="button"
+          className={`type-segmented-btn ${!isSubtree ? 'active normal' : ''}`}
+          onClick={() => onUpdate(idx, 'type', 'normal')}
+        >
+          📦 Standard Repo
+        </button>
+        <button
+          type="button"
+          className={`type-segmented-btn ${isSubtree ? 'active' : ''}`}
+          onClick={() => onUpdate(idx, {
+            type: 'subtree',
+            subtreePath: project.subtreePath || defaultSubtreePath || 'projects/base-client',
+            basePath: project.basePath || defaultSubtreeBasePath || 'fonebank/banksmart-client-web',
+          })}
+        >
+          🌿 Subtree Base
+        </button>
+      </div>
+
+      {/* Subtree configuration parameters */}
+      {isSubtree && (
+        <div className="subtree-config-box">
+          <div className="subtree-config-title">
+            <span>🌿 Base Subtree Configuration</span>
+          </div>
+          <div className="subtree-grid">
+            <div className="subtree-field">
+              <label className="proj-input-label">Subtree Folder in Repo</label>
+              <input 
+                type="text" 
+                placeholder="projects/base-client" 
+                value={project.subtreePath} 
+                onChange={(e) => onUpdate(idx, 'subtreePath', e.target.value)} 
+              />
+            </div>
+            <div className="subtree-field">
+              <label className="proj-input-label">Base Project Path</label>
+              <input 
+                type="text" 
+                placeholder="fonebank/banksmart-client-web" 
+                value={project.basePath} 
+                onChange={(e) => onUpdate(idx, 'basePath', e.target.value)} 
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>
