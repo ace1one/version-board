@@ -82,12 +82,22 @@ export default function TableView({ results }) {
                   <span className="tag-pill">{r.latestTag || '—'}</span>
                 </td>
                 <td>
-                  <strong>{r.packageVersion || '—'}</strong>
+                  {r.monorepo ? (
+                    <span className="code-pill" style={{ color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.3)' }}>
+                      {r.monorepo.workspaces?.length || 0} workspaces
+                    </span>
+                  ) : (
+                    <strong>{r.packageVersion || '—'}</strong>
+                  )}
                 </td>
                 <td>
                   {st ? (
                     <span className={st.pulledVersion ? 'code-pill' : 'dim'}>
                       {st.pulledVersion || '—'}
+                    </span>
+                  ) : r.monorepo ? (
+                    <span className="dim" style={{ fontSize: '11px' }}>
+                      {r.monorepo.workspaces ? r.monorepo.workspaces.map(w => w.name).slice(0, 2).join(', ') + (r.monorepo.workspaces.length > 2 ? '…' : '') : '—'}
                     </span>
                   ) : (
                     <span className="dim">N/A</span>
@@ -103,6 +113,10 @@ export default function TableView({ results }) {
                 <td>
                   {!r.ok ? (
                     <span className="status-badge err">Error</span>
+                  ) : r.monorepo ? (
+                    <span className="status-badge monorepo" style={{ color: '#38bdf8', background: 'rgba(56, 189, 248, 0.1)', borderColor: 'rgba(56, 189, 248, 0.3)' }}>
+                      🏛️ Monorepo
+                    </span>
                   ) : !st ? (
                     <span className="status-badge normal">Standard</span>
                   ) : isUpToDate ? (

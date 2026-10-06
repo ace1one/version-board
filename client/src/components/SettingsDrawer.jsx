@@ -43,17 +43,37 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
     setDebounceTimer(timer);
   };
 
-  const detectSubtreeInfo = (repo) => {
-    const path = repo.path_with_namespace || repo.path;
+  const detectProjectType = (repo) => {
+    const path = (repo.path_with_namespace || repo.path || '').toLowerCase();
+    const name = (repo.name || '').toLowerCase();
+
+    // 1. Monorepos (web-workspace/bankxp, web-workspace/bankxp-plus, or explicit monorepo repos)
+    const isMonorepo = path.startsWith('web-workspace/') ||
+                       path === 'web-workspace/bankxp' ||
+                       path === 'web-workspace/bankxp-plus' ||
+                       path === 'bankxp' ||
+                       path === 'bankxp-plus' ||
+                       name.includes('monorepo') ||
+                       (path.includes('workspace') && !path.includes('fonebank/bankxp/'));
+
+    if (isMonorepo) {
+      return { type: 'monorepo', subtreePath: '', basePath: '' };
+    }
+
+    // 2. Subtree repos: fonebank/bankxp/<bank>, banksmart, nested repos
     const isSubtree = repo.hasSubtree ||
-                      path.includes('bankxp') ||
+                      path.includes('fonebank/bankxp/') ||
                       path.includes('banksmart') ||
                       path.split('/').length > 2;
 
     const subPath = (defaultSubtreePath && defaultSubtreePath.trim()) || 'projects/base-client';
     const bPath = (defaultSubtreeBasePath && defaultSubtreeBasePath.trim()) || 'fonebank/banksmart-client-web';
 
-    return { isSubtree, subtreePath: subPath, basePath: bPath };
+    return {
+      type: isSubtree ? 'subtree' : 'normal',
+      subtreePath: subPath,
+      basePath: bPath,
+    };
   };
 
   // Add newly selected repo to TOP of the list
@@ -62,14 +82,14 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
     const alreadyExists = projects.some((p) => p.path === fullPath);
     if (alreadyExists) return;
 
-    const { isSubtree, subtreePath, basePath } = detectSubtreeInfo(repo);
+    const info = detectProjectType(repo);
 
     const newProject = {
       name: repo.name,
       path: fullPath,
-      type: isSubtree ? 'subtree' : 'normal',
-      subtreePath: subtreePath,
-      basePath: basePath,
+      type: info.type,
+      subtreePath: info.subtreePath,
+      basePath: info.basePath,
     };
 
     setProjects([newProject, ...projects]);
@@ -205,8 +225,9 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
     });
   };
 
+  const monorepoCount = projects.filter((p) => p.type === 'monorepo').length;
   const subtreeCount = projects.filter((p) => p.type === 'subtree').length;
-  const normalCount = projects.length - subtreeCount;
+  const normalCount = projects.filter((p) => p.type !== 'subtree' && p.type !== 'monorepo').length;
 
   // Filter projects if search term entered in added section
   const visibleProjects = projects.filter((p) => {
@@ -300,6 +321,17 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
           background: rgba(79, 209, 165, 0.15);
           color: var(--accent);
           border: 1px solid rgba(79, 209, 165, 0.3);
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+        .monorepo-badge {
+          font-size: 10px;
+          padding: 2px 7px;
+          border-radius: 4px;
+          background: rgba(56, 189, 248, 0.15);
+          color: #38bdf8;
+          border: 1px solid rgba(56, 189, 248, 0.35);
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.04em;
@@ -584,6 +616,38 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
         .type-segmented-btn.active.normal {
           color: var(--text);
         }
+        .type-segmented-btn.active.monorepo {
+          color: #38bdf8;
+        }
+
+        /* Monorepo nested box */
+        .monorepo-config-box {
+          background: rgba(56, 189, 248, 0.04);
+          border: 1px solid rgba(56, 189, 248, 0.2);
+          border-left: 3px solid #38bdf8;
+          border-radius: 6px;
+          padding: 10px 12px;
+          margin-top: 8px;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .monorepo-config-title {
+          font-size: 11px;
+          font-weight: 700;
+          color: #38bdf8;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+        .monorepo-config-hint {
+          font-size: 11.5px;
+          color: var(--text-muted);
+          line-height: 1.45;
+          margin: 0;
+        }
 
         /* Subtree nested box */
         .subtree-config-box {
@@ -733,13 +797,16 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
                   {browseResults.map((repo) => {
                     const fullPath = repo.path_with_namespace || repo.path;
                     const alreadyAdded = projects.some((p) => p.path === fullPath);
-                    const { isSubtree } = detectSubtreeInfo(repo);
+                    const info = detectProjectType(repo);
+                    const isSubtree = info.type === 'subtree';
+                    const isMonorepo = info.type === 'monorepo';
                     
                     return (
                       <div key={repo.id} className={`repo-card ${alreadyAdded ? 'already-added' : ''}`}>
                         <div className="repo-info">
                           <div className="repo-name">
                             {repo.name}
+                            {isMonorepo && <span className="monorepo-badge">Monorepo</span>}
                             {isSubtree && <span className="subtree-badge">Subtree</span>}
                           </div>
                           <p className="card-path">{fullPath}</p>
@@ -774,6 +841,9 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
                 <div className="projects-title-wrap">
                   <span className="projects-title">Added Projects</span>
                   <span className="count-pill accent">{projects.length}</span>
+                  {monorepoCount > 0 && (
+                    <span className="count-pill" style={{ color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.3)' }}>{monorepoCount} monorepo</span>
+                  )}
                   {subtreeCount > 0 && (
                     <span className="count-pill">{subtreeCount} subtree</span>
                   )}
@@ -841,6 +911,8 @@ function ProjectRow({
   onMove,
 }) {
   const isSubtree = project.type === 'subtree';
+  const isMonorepo = project.type === 'monorepo';
+  const isNormal = !isSubtree && !isMonorepo;
 
   return (
     <div className={`proj-card ${isJustAdded ? 'just-added' : ''}`}>
@@ -848,7 +920,7 @@ function ProjectRow({
         <span className="proj-index-badge">#{idx + 1}</span>
         <input 
           type="text" 
-          placeholder="Display Name (e.g. Prabhu Bank)" 
+          placeholder="Display Name (e.g. BankXP Monorepo)" 
           value={project.name} 
           onChange={(e) => onUpdate(idx, 'name', e.target.value)} 
           className="proj-name-input"
@@ -884,7 +956,7 @@ function ProjectRow({
         <label className="proj-input-label">GitLab Path</label>
         <input 
           type="text" 
-          placeholder="namespace/project-name (e.g. fonebank/bankxp/rbb)" 
+          placeholder="namespace/project-name (e.g. fonebank/bankxp)" 
           value={project.path} 
           onChange={(e) => onUpdate(idx, 'path', e.target.value)} 
           className="proj-path-input"
@@ -895,7 +967,7 @@ function ProjectRow({
       <div className="type-segmented">
         <button
           type="button"
-          className={`type-segmented-btn ${!isSubtree ? 'active normal' : ''}`}
+          className={`type-segmented-btn ${isNormal ? 'active normal' : ''}`}
           onClick={() => onUpdate(idx, 'type', 'normal')}
         >
           📦 Standard Repo
@@ -911,7 +983,26 @@ function ProjectRow({
         >
           🌿 Subtree Base
         </button>
+        <button
+          type="button"
+          className={`type-segmented-btn ${isMonorepo ? 'active monorepo' : ''}`}
+          onClick={() => onUpdate(idx, 'type', 'monorepo')}
+        >
+          🏛️ Monorepo Workspaces
+        </button>
       </div>
+
+      {/* Monorepo configuration informational box */}
+      {isMonorepo && (
+        <div className="monorepo-config-box">
+          <div className="monorepo-config-title">
+            <span>🏛️ Multi-Bank / Monorepo Auto-Discovery</span>
+          </div>
+          <p className="monorepo-config-hint">
+            The tracker reads the root <code>package.json</code> <code>workspaces</code> array and automatically tracks individual versions, folder commits, and release tags for each bank package.
+          </p>
+        </div>
+      )}
 
       {/* Subtree configuration parameters */}
       {isSubtree && (

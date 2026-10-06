@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { fmtDate } from '../utils/helpers';
+import { fmtDate, timeAgo } from '../utils/helpers';
 import BranchDropdown from './BranchDropdown';
 import MrReviewModal from './MrReviewModal';
 import MrCreateModal from './MrCreateModal';
+import TagCreateModal from './TagCreateModal';
+import CommitDetailModal from './CommitDetailModal';
 import {
   GitBranchIcon,
   TagIcon,
@@ -18,13 +20,14 @@ import {
   CheckIcon,
   PlusIcon,
   GitMergeIcon,
+  TrashIcon,
 } from './Icons';
 
 export default function DetailView({ config, results }) {
   const { key } = useParams();
   const [activeTab, setActiveTab] = useState('details');
 
-  // MRs & Issues state
+  // MRs & Issues & Commits state
   const [mergeRequests, setMergeRequests] = useState([]);
   const [issues, setIssues] = useState([]);
   const [mrLoading, setMrLoading] = useState(false);
@@ -34,7 +37,10 @@ export default function DetailView({ config, results }) {
   const [mrStateFilter, setMrStateFilter] = useState('opened');
   const [mrSearch, setMrSearch] = useState('');
   const [selectedReviewMrId, setSelectedReviewMrId] = useState(null);
+  const [selectedCommitSha, setSelectedCommitSha] = useState(null);
   const [showCreateMrModal, setShowCreateMrModal] = useState(false);
+  const [showCreateTagModal, setShowCreateTagModal] = useState(false);
+  const [deletingTagName, setDeletingTagName] = useState(null);
 
   // Branches & Commits & Tags state
   const [branches, setBranches] = useState([]);
@@ -163,6 +169,27 @@ export default function DetailView({ config, results }) {
     fetchTags();
   }, [fetchTags]);
 
+  const handleDeleteTag = async (tagName) => {
+    if (!window.confirm(`Are you sure you want to delete tag "${tagName}"? This will permanently delete the tag from GitLab.`)) {
+      return;
+    }
+    setDeletingTagName(tagName);
+    try {
+      await safeJsonFetch('/api/tag-delete', {
+        gitlabUrl: effectiveGitlabUrl,
+        token: effectiveToken,
+        projectPath: initialMatch?.key,
+        projectId: initialMatch?.gitlabProjectId,
+        tagName,
+      });
+      fetchTags();
+    } catch (err) {
+      alert('Failed to delete tag: ' + err.message);
+    } finally {
+      setDeletingTagName(null);
+    }
+  };
+
   // Fetch MRs on mount and when state filter changes
   const fetchMergeRequests = useCallback((stateOverride) => {
     if (initialMatch && initialMatch.ok && effectiveGitlabUrl && effectiveToken) {
@@ -286,6 +313,8 @@ export default function DetailView({ config, results }) {
         projectPath: initialMatch?.key,
         projectId: initialMatch?.gitlabProjectId,
         ref: newBranch,
+        type: pConfig.type || initialMatch?.type,
+        isMonorepo: pConfig.type === 'monorepo' || initialMatch?.type === 'monorepo' || !!initialMatch?.monorepo,
         subtreePath: pConfig.subtreePath || initialMatch?.subtree?.subtreePath,
         basePath: pConfig.basePath || initialMatch?.subtree?.baseProjectPath,
         packageJsonPath: config.packageJsonPath,
@@ -446,8 +475,20 @@ export default function DetailView({ config, results }) {
                 </div>
               </div>
 
+              {match.monorepo && (
+                <MonorepoDetail
+                  monorepo={match.monorepo}
+                  webUrl={cleanWebUrl}
+                  defaultBranch={selectedBranch || match.defaultBranch}
+                  onSelectCommit={(sha) => setSelectedCommitSha(sha)}
+                />
+              )}
+
               {match.subtree && (
-                <SubtreeDetail subtree={match.subtree} />
+                <SubtreeDetail
+                  subtree={match.subtree}
+                  onSelectCommit={(sha) => setSelectedCommitSha(sha)}
+                />
               )}
             </>
           )}
@@ -521,11 +562,17 @@ export default function DetailView({ config, results }) {
                   <>
                     {filtered.map((c) => {
                       const matchedTag = tagsBySha[c.id] || tagsBySha[c.shortId] || null;
+                      const commitGitlabUrl = c.webUrl || (cleanWebUrl ? `${cleanWebUrl}/-/commit/${c.id || c.shortId}` : '');
                       return (
-                        <a key={c.id} href={c.webUrl} target="_blank" rel="noopener noreferrer" className="list-item">
+                        <div
+                          key={c.id || c.shortId}
+                          className="list-item clickable-commit-row"
+                          onClick={() => setSelectedCommitSha(c.id || c.shortId)}
+                          style={{ cursor: 'pointer', transition: 'background 0.15s ease' }}
+                        >
                           <div className="list-item-head">
                             <span className="list-item-title">{c.title}</span>
-                            <div className="commit-head-right">
+                            <div className="commit-head-right" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                               {matchedTag && (
                                 <span className="commit-tag-pill" title={`Tag: ${matchedTag}`}>
                                   <TagIcon size={11} className="commit-tag-icon" />
@@ -533,13 +580,34 @@ export default function DetailView({ config, results }) {
                                 </span>
                               )}
                               <span className="code-pill">{c.shortId}</span>
+                              {commitGitlabUrl && (
+                                <a
+                                  href={commitGitlabUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="btn btn-ghost"
+                                  style={{
+                                    padding: '2px 7px',
+                                    fontSize: '11px',
+                                    height: '22px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                    color: 'var(--text-muted)',
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  title="Open commit directly in GitLab"
+                                >
+                                  GitLab <ExternalLinkIcon size={10} />
+                                </a>
+                              )}
                             </div>
                           </div>
                           <div className="list-item-meta">
                             <span>by <strong>{c.author}</strong></span>
                             <span>{fmtDate(c.date)}</span>
                           </div>
-                        </a>
+                        </div>
                       );
                     })}
 
@@ -579,11 +647,21 @@ export default function DetailView({ config, results }) {
           {/* TAB 3: TAGS & RELEASES */}
           {activeTab === 'tags' && (
             <div className="card detail-card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
-                <div className="subtree-title" style={{ margin: 0 }}>Tags &amp; Release History</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <div className="subtree-title" style={{ margin: 0 }}>Tags &amp; Release History</div>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ padding: '3px 10px', fontSize: '11.5px', height: '26px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                    onClick={() => setShowCreateTagModal(true)}
+                  >
+                    <PlusIcon size={12} /> New Tag
+                  </button>
+                </div>
                 <input
                   type="text"
-                  placeholder="Filter tags by name or message..."
+                  placeholder="Filter tags by name, message, commit..."
                   value={tagSearch}
                   onChange={(e) => setTagSearch(e.target.value)}
                   style={{
@@ -626,14 +704,24 @@ export default function DetailView({ config, results }) {
                         <span className="tag-pill" style={{ fontSize: '12.5px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
                           <TagIcon size={13} /> {t.name}
                         </span>
-                        {t.commit && <span className="code-pill">{t.commit.shortId}</span>}
+                        {t.commit && (
+                          <button
+                            type="button"
+                            className="code-pill"
+                            style={{ cursor: 'pointer', border: '1px solid var(--hairline)' }}
+                            title={`View commit ${t.commit.id || t.commit.shortId} in-app diffs`}
+                            onClick={() => setSelectedCommitSha(t.commit.id || t.commit.shortId)}
+                          >
+                            Target: {t.commit.shortId}
+                          </button>
+                        )}
                       </div>
-                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                         <button
                           type="button"
                           className="btn btn-ghost"
                           style={{ padding: '2px 8px', fontSize: '11px', height: '24px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                          title="Switch ref to view commits at this tag"
+                          title={`Switch ref to view commits, files and package versions at tag ${t.name}`}
                           onClick={() => handleBranchChange(t.name)}
                         >
                           <GitBranchIcon size={12} /> Switch Ref
@@ -647,6 +735,16 @@ export default function DetailView({ config, results }) {
                         >
                           GitLab Tag <ExternalLinkIcon size={11} />
                         </a>
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          style={{ padding: '2px 8px', fontSize: '11px', height: '24px', display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--danger)' }}
+                          title={`Delete tag ${t.name} from GitLab`}
+                          disabled={deletingTagName === t.name}
+                          onClick={() => handleDeleteTag(t.name)}
+                        >
+                          <TrashIcon size={12} /> {deletingTagName === t.name ? 'Deleting…' : 'Delete'}
+                        </button>
                       </div>
                     </div>
                     {t.commit?.title && (
@@ -878,6 +976,35 @@ export default function DetailView({ config, results }) {
           }}
         />
       )}
+
+      {/* New Git Tag Creation Modal */}
+      {showCreateTagModal && (
+        <TagCreateModal
+          isOpen={showCreateTagModal}
+          onClose={() => setShowCreateTagModal(false)}
+          project={match}
+          config={config}
+          branches={branches}
+          tags={tags}
+          currentRef={selectedBranch || match.defaultBranch}
+          onSuccess={() => {
+            fetchTags();
+            fetchBranches();
+          }}
+        />
+      )}
+
+      {/* In-App Commit Detail & Diff Modal */}
+      {selectedCommitSha && (
+        <CommitDetailModal
+          isOpen={!!selectedCommitSha}
+          onClose={() => setSelectedCommitSha(null)}
+          commitSha={selectedCommitSha}
+          project={match}
+          config={config}
+          onSelectSha={(sha) => setSelectedCommitSha(sha)}
+        />
+      )}
     </div>
   );
 }
@@ -941,7 +1068,13 @@ function SubtreeDetail({ subtree }) {
           </div>
           <div className="behind-list behind-list-full" style={{ marginTop: 10 }}>
             {st.behindCommits.map((c, i) => (
-              <div className="behind-commit" key={i}>
+              <div
+                className="behind-commit"
+                key={i}
+                style={{ cursor: 'pointer' }}
+                onClick={() => onSelectCommit && onSelectCommit(c.sha)}
+                title={`Click to view commit ${c.sha} diffs in-app`}
+              >
                 <span className="sha">{c.sha}</span>
                 <span className="behind-title">{c.title}</span>
                 <span className="behind-meta">{c.author || ''} · {fmtDate(c.date)}</span>
@@ -950,6 +1083,98 @@ function SubtreeDetail({ subtree }) {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function MonorepoDetail({ monorepo, webUrl, defaultBranch, onSelectCommit }) {
+  if (monorepo.error) {
+    return (
+      <div className="card status-warn detail-card">
+        <div className="subtree-title">Multi-Bank Workspaces</div>
+        <p className="error-text">{monorepo.error}</p>
+      </div>
+    );
+  }
+
+  const allWorkspaces = monorepo.workspaces || [];
+  const workspaces = allWorkspaces.filter((ws) => {
+    const name = (ws.name || ws.path || '').toLowerCase();
+    return !name.includes('nucleus') && !name.includes('xp-service');
+  });
+
+  if (workspaces.length === 0) {
+    return (
+      <div className="card status-ok detail-card">
+        <div className="subtree-title">Multi-Bank Workspaces</div>
+        <p className="dim">No bank workspace packages detected in root package.json.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card status-ok detail-card">
+      <div className="subtree-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+        <span>Workspaces &amp; Multi-Bank Applications ({workspaces.length})</span>
+        <span className="code-pill">Ref: {defaultBranch}</span>
+      </div>
+
+      <div className="monorepo-detail-grid" style={{ marginTop: 14 }}>
+        {workspaces.map((ws, idx) => {
+          const folderUrl = webUrl && defaultBranch ? `${webUrl}/-/tree/${encodeURIComponent(defaultBranch)}/${encodeURIComponent(ws.path)}` : null;
+          return (
+            <div key={ws.path || idx} className="monorepo-detail-item">
+              <div className="monorepo-detail-header">
+                <div>
+                  <span className="monorepo-detail-name">{ws.name}</span>
+                  <div className="card-path" style={{ marginTop: 2 }}>{ws.path}</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  {ws.version && <span className="monorepo-ws-version">v{ws.version}</span>}
+                  {ws.latestTag && (
+                    <span className="monorepo-ws-tag" title={`Matching Release Tag: ${ws.latestTag.name}`}>
+                      <TagIcon size={10} style={{ marginRight: 3, verticalAlign: 'middle' }} />
+                      {ws.latestTag.name}
+                    </span>
+                  )}
+                  {folderUrl && (
+                    <a
+                      href={folderUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-table-link"
+                      style={{ padding: '2px 6px', fontSize: '11px' }}
+                      title="Open workspace directory in GitLab"
+                    >
+                      browse ↗
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              {ws.latestCommit ? (
+                <div
+                  className="monorepo-detail-commit"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => onSelectCommit && onSelectCommit(ws.latestCommit.sha)}
+                  title={`View commit ${ws.latestCommit.sha} diffs in-app`}
+                >
+                  <div className="monorepo-detail-commit-title">
+                    <span className="code-pill" style={{ fontSize: '11px', marginRight: 6 }}>{ws.latestCommit.sha}</span>
+                    <span>{ws.latestCommit.title}</span>
+                  </div>
+                  <div className="list-item-meta" style={{ marginTop: 4 }}>
+                    <span>by <strong>{ws.latestCommit.author}</strong></span>
+                    <span>{timeAgo(ws.latestCommit.date)} ({fmtDate(ws.latestCommit.date)})</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="dim" style={{ fontSize: '11.5px', marginTop: 6 }}>No folder commits found</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

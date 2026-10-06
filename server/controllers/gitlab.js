@@ -110,6 +110,143 @@ async function getSubtreeStatus(gitlabUrl, token, mainProjectId, mainRef, subtre
   return result;
 }
 
+async function getMonorepoStatus(gitlabUrl, token, projectId, ref) {
+  // 1. Fetch root package.json and tags
+  const [rootPkgRaw, projectTags] = await Promise.all([
+    gitlabApi.getRawFileContent(gitlabUrl, token, projectId, 'package.json', ref),
+    gitlabApi.getTags(gitlabUrl, token, projectId, 1, 100).catch(() => []),
+  ]);
+
+  let rootPkg = {};
+  try {
+    rootPkg = JSON.parse(rootPkgRaw);
+  } catch (err) {
+    throw new Error(`Failed to parse root package.json: ${err.message}`);
+  }
+
+  const ignoredWorkspaceNames = ['nucleus', 'xp-services', 'xp-service'];
+  const isIgnoredWorkspace = (str) => {
+    if (!str) return false;
+    const clean = str.toLowerCase().replace(/^@[^/]+\//, '').replace(/^\.\//, '').replace(/\/+$/, '');
+    const base = clean.split('/').pop();
+    return ignoredWorkspaceNames.includes(clean) || ignoredWorkspaceNames.includes(base);
+  };
+
+  const rawWorkspaces = rootPkg.workspaces || [];
+  let workspacePaths = Array.isArray(rawWorkspaces)
+    ? rawWorkspaces
+    : (rawWorkspaces.packages || []);
+
+  workspacePaths = workspacePaths.filter((ws) => !isIgnoredWorkspace(ws));
+
+  if (!workspacePaths || workspacePaths.length === 0) {
+    return {
+      workspaces: [],
+      error: 'No bank workspaces found in root package.json',
+    };
+  }
+
+  // 2. Fetch data for each workspace in parallel
+  const workspaceDetails = await Promise.all(
+    workspacePaths.map(async (wsPath) => {
+      // Remove leading ./ and trailing slashes
+      const cleanPath = wsPath.replace(/^\.\//, '').replace(/\/+$/, '');
+      if (isIgnoredWorkspace(cleanPath)) return null;
+      const pkgFilePath = `${cleanPath}/package.json`;
+
+      try {
+        const [pkgText, pathCommits] = await Promise.all([
+          gitlabApi.getRawFileContent(gitlabUrl, token, projectId, pkgFilePath, ref).catch(() => null),
+          gitlabApi.getCommitsByPath(gitlabUrl, token, projectId, ref, cleanPath, 1, 1).catch(() => []),
+        ]);
+
+        if (!pkgText) {
+          // If no package.json in this workspace folder, still show commit if folder exists
+          const latestCommit = pathCommits && pathCommits[0] ? pathCommits[0] : null;
+          return {
+            path: cleanPath,
+            name: cleanPath,
+            version: null,
+            latestCommit: latestCommit
+              ? {
+                  sha: latestCommit.short_id,
+                  fullSha: latestCommit.id,
+                  title: latestCommit.title,
+                  date: latestCommit.committed_date,
+                  author: latestCommit.author_name,
+                  webUrl: latestCommit.web_url,
+                }
+              : null,
+            latestTag: null,
+          };
+        }
+
+        let pkg = {};
+        try {
+          pkg = JSON.parse(pkgText);
+        } catch (e) {
+          pkg = { name: cleanPath, version: 'parse error' };
+        }
+
+        if (pkg.name && isIgnoredWorkspace(pkg.name)) {
+          return null;
+        }
+
+        const latestCommit = pathCommits && pathCommits[0] ? pathCommits[0] : null;
+
+        // Match bank-specific tag (e.g. laxmi-v1.0.4, laxmi-1.0.4, v1.0.4-laxmi, base-v2.4.0)
+        const folderBasename = cleanPath.split('/').pop().toLowerCase();
+        const pkgShortName = (pkg.name || '').replace(/^@[^/]+\//, '').toLowerCase();
+
+        const matchingTag = (projectTags || []).find((t) => {
+          if (!t || !t.name) return false;
+          const tName = t.name.toLowerCase();
+          return (
+            tName.startsWith(`${folderBasename}-`) ||
+            tName.startsWith(`${folderBasename}/`) ||
+            tName.includes(folderBasename) ||
+            (pkgShortName && (tName.startsWith(`${pkgShortName}-`) || tName.includes(pkgShortName)))
+          );
+        }) || null;
+
+        return {
+          path: cleanPath,
+          name: pkg.name || cleanPath,
+          version: pkg.version || '0.0.0',
+          description: pkg.description || '',
+          latestCommit: latestCommit
+            ? {
+                sha: latestCommit.short_id,
+                fullSha: latestCommit.id,
+                title: latestCommit.title,
+                date: latestCommit.committed_date,
+                author: latestCommit.author_name,
+                webUrl: latestCommit.web_url,
+              }
+            : null,
+          latestTag: matchingTag
+            ? {
+                name: matchingTag.name,
+                date: matchingTag.commit ? matchingTag.commit.committed_date : null,
+              }
+            : null,
+        };
+      } catch (e) {
+        return {
+          path: cleanPath,
+          name: cleanPath,
+          error: e.message,
+        };
+      }
+    })
+  );
+
+  return {
+    workspaces: workspaceDetails.filter(Boolean),
+    totalWorkspaces: workspaceDetails.filter(Boolean).length,
+  };
+}
+
 // --- Controller functions (called by routes) ---
 
 async function testConnection(req, res) {
@@ -165,6 +302,14 @@ async function checkAll(req, res) {
           out.subtree = await getSubtreeStatus(gitlabUrl, token, info.id, ref, p.subtreePath, p.basePath, pkgPath);
         } catch (e) {
           out.subtree = { error: e.message };
+        }
+      }
+
+      if (p.type === 'monorepo') {
+        try {
+          out.monorepo = await getMonorepoStatus(gitlabUrl, token, info.id, ref);
+        } catch (e) {
+          out.monorepo = { error: e.message, workspaces: [] };
         }
       }
 
@@ -285,33 +430,16 @@ async function getMergeRequestChanges(req, res) {
       gitlabApi.getMergeRequestCommits(gitlabUrl, token, pId, mrIid).catch(() => []),
     ]);
 
-    const changes = await Promise.all(
-      (mrWithChanges.changes || []).map(async (c) => {
-        let diff = c.diff;
-        // If it's a new file and diff is empty, try to fetch the file content to synthesize diff
-        if (c.new_file && (!diff || !diff.trim()) && mrWithChanges.source_branch) {
-          try {
-            const raw = await gitlabApi.getRawFileContent(gitlabUrl, token, pId, c.new_path, mrWithChanges.source_branch);
-            if (raw && typeof raw === 'string') {
-              const lines = raw.split('\n');
-              diff = `@@ -0,0 +1,${lines.length} @@\n` + lines.map((l) => '+' + l).join('\n');
-            }
-          } catch (err) {
-            // Ignore raw fetch error if binary or missing
-          }
-        }
-        return {
-          oldPath: c.old_path,
-          newPath: c.new_path,
-          aMode: c.a_mode,
-          bMode: c.b_mode,
-          newFile: c.new_file,
-          renamedFile: c.renamed_file,
-          deletedFile: c.deleted_file,
-          diff: diff,
-        };
-      })
-    );
+    const changes = (mrWithChanges.changes || []).map((c) => ({
+      oldPath: c.old_path,
+      newPath: c.new_path,
+      aMode: c.a_mode,
+      bMode: c.b_mode,
+      newFile: Boolean(c.new_file),
+      renamedFile: Boolean(c.renamed_file),
+      deletedFile: Boolean(c.deleted_file),
+      diff: c.diff || '',
+    }));
 
     res.json({
       changesCount: mrWithChanges.changes_count || changes.length || 0,
@@ -602,9 +730,142 @@ async function getBranchStatus(req, res) {
       }
     }
 
+    if (req.body.type === 'monorepo' || req.body.isMonorepo) {
+      try {
+        result.monorepo = await getMonorepoStatus(gitlabUrl, token, pId, ref);
+      } catch (e) {
+        result.monorepo = { error: e.message, workspaces: [] };
+      }
+    }
+
     res.json(result);
   } catch (e) {
     console.error('getBranchStatus error:', e.message);
+    res.status(e.status || 500).json({ error: e.message });
+  }
+}
+
+async function createProjectTag(req, res) {
+  const { gitlabUrl, token, projectPath, projectId, tagName, ref, message, releaseDescription } = req.body;
+  try {
+    const pId = projectId || (await gitlabApi.getProjectInfo(gitlabUrl, token, projectPath)).id;
+    const payload = {
+      tag_name: tagName,
+      ref: ref,
+    };
+    if (message && message.trim()) payload.message = message.trim();
+    if (releaseDescription && releaseDescription.trim()) payload.release_description = releaseDescription.trim();
+
+    const tag = await gitlabApi.createTag(gitlabUrl, token, pId, payload);
+    res.json({
+      success: true,
+      tag: {
+        name: tag.name,
+        message: tag.message,
+        target: tag.target,
+        commit: tag.commit ? {
+          id: tag.commit.id,
+          shortId: tag.commit.short_id,
+          title: tag.commit.title,
+          author: tag.commit.author_name,
+          date: tag.commit.committed_date,
+        } : null,
+        release: tag.release ? {
+          tagName: tag.release.tag_name,
+          description: tag.release.description,
+        } : null,
+      },
+    });
+  } catch (e) {
+    console.error('createProjectTag error:', e.message);
+    res.status(e.status || 500).json({ error: e.message });
+  }
+}
+
+async function deleteProjectTag(req, res) {
+  const { gitlabUrl, token, projectPath, projectId, tagName } = req.body;
+  try {
+    const pId = projectId || (await gitlabApi.getProjectInfo(gitlabUrl, token, projectPath)).id;
+    await gitlabApi.deleteTag(gitlabUrl, token, pId, tagName);
+    res.json({ success: true, tagName });
+  } catch (e) {
+    console.error('deleteProjectTag error:', e.message);
+    res.status(e.status || 500).json({ error: e.message });
+  }
+}
+
+async function getCommitDetails(req, res) {
+  const { gitlabUrl, token, projectPath, projectId, sha } = req.body;
+  try {
+    const pId = projectId || (await gitlabApi.getProjectInfo(gitlabUrl, token, projectPath)).id;
+    const [commit, diffs, refs] = await Promise.all([
+      gitlabApi.getCommit(gitlabUrl, token, pId, sha),
+      gitlabApi.getCommitDiff(gitlabUrl, token, pId, sha).catch(() => []),
+      gitlabApi.getCommitRefs(gitlabUrl, token, pId, sha).catch(() => []),
+    ]);
+
+    // Parse diffs and calculate additions / deletions
+    let totalAdds = 0;
+    let totalDels = 0;
+    const formattedDiffs = (diffs || []).map((d) => {
+      let add = 0;
+      let del = 0;
+      if (d.diff) {
+        const lines = d.diff.split('\n');
+        for (const line of lines) {
+          if (line.startsWith('+') && !line.startsWith('+++')) add++;
+          else if (line.startsWith('-') && !line.startsWith('---')) del++;
+        }
+      }
+      totalAdds += add;
+      totalDels += del;
+      return {
+        diff: d.diff,
+        newPath: d.new_path,
+        oldPath: d.old_path,
+        newFile: Boolean(d.new_file),
+        renamedFile: Boolean(d.renamed_file),
+        deletedFile: Boolean(d.deleted_file),
+        aMode: d.a_mode,
+        bMode: d.b_mode,
+        additions: add,
+        deletions: del,
+      };
+    });
+
+    const additions = (commit.stats && commit.stats.additions != null) ? commit.stats.additions : totalAdds;
+    const deletions = (commit.stats && commit.stats.deletions != null) ? commit.stats.deletions : totalDels;
+
+    const branches = (refs || []).filter((r) => r.type === 'branch').map((r) => r.name);
+    const tags = (refs || []).filter((r) => r.type === 'tag').map((r) => r.name);
+
+    res.json({
+      commit: {
+        id: commit.id,
+        shortId: commit.short_id,
+        title: commit.title,
+        message: commit.message,
+        authorName: commit.author_name,
+        authorEmail: commit.author_email,
+        authoredDate: commit.authored_date,
+        committerName: commit.committer_name,
+        committerEmail: commit.committer_email,
+        committedDate: commit.committed_date,
+        parentIds: commit.parent_ids || [],
+        webUrl: commit.web_url,
+        stats: {
+          additions,
+          deletions,
+          total: additions + deletions,
+          changedFiles: formattedDiffs.length,
+        },
+        branches,
+        tags,
+      },
+      diffs: formattedDiffs,
+    });
+  } catch (e) {
+    console.error('getCommitDetails error:', e.message);
     res.status(e.status || 500).json({ error: e.message });
   }
 }
@@ -622,6 +883,9 @@ module.exports = {
   getProjectIssues,
   getProjectBranches,
   getProjectCommits,
+  getCommitDetails,
   getProjectTags,
+  createProjectTag,
+  deleteProjectTag,
   getBranchStatus,
 };

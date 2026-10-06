@@ -65,6 +65,23 @@ async function gitlabPut(gitlabUrl, token, apiPath, body) {
   return res.json();
 }
 
+async function gitlabDelete(gitlabUrl, token, apiPath) {
+  const url = `${cleanBaseUrl(gitlabUrl)}/api/v4${apiPath}`;
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: {
+      'PRIVATE-TOKEN': token,
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    const err = new Error(`GitLab API ${res.status} for ${apiPath}: ${text.slice(0, 300)}`);
+    err.status = res.status;
+    throw err;
+  }
+  return res.status === 204 ? { ok: true } : res.json().catch(() => ({ ok: true }));
+}
+
 // --- Convenience wrappers ---
 
 async function getCurrentUser(gitlabUrl, token) {
@@ -288,9 +305,52 @@ async function getRecentActivity(gitlabUrl, token, projectId, perPage = 10) {
   );
 }
 
+async function createTag(gitlabUrl, token, projectId, data) {
+  return gitlabPost(
+    gitlabUrl, token,
+    `/projects/${encodeURIComponent(projectId)}/repository/tags`,
+    data
+  );
+}
+
+async function deleteTag(gitlabUrl, token, projectId, tagName) {
+  return gitlabDelete(
+    gitlabUrl, token,
+    `/projects/${encodeURIComponent(projectId)}/repository/tags/${encodeURIComponent(tagName)}`
+  );
+}
+
+async function getCommit(gitlabUrl, token, projectId, sha) {
+  return gitlabGet(
+    gitlabUrl, token,
+    `/projects/${encodeURIComponent(projectId)}/repository/commits/${encodeURIComponent(sha)}?stats=true`
+  );
+}
+
+async function getCommitDiff(gitlabUrl, token, projectId, sha) {
+  return gitlabGet(
+    gitlabUrl, token,
+    `/projects/${encodeURIComponent(projectId)}/repository/commits/${encodeURIComponent(sha)}/diff`
+  );
+}
+
+async function getCommitRefs(gitlabUrl, token, projectId, sha) {
+  try {
+    return await gitlabGet(
+      gitlabUrl, token,
+      `/projects/${encodeURIComponent(projectId)}/repository/commits/${encodeURIComponent(sha)}/refs?type=all`
+    );
+  } catch (e) {
+    return [];
+  }
+}
+
 module.exports = {
   getCurrentUser,
   getProjectInfo,
+  getCommit,
+  getCommitDiff,
+  getCommitRefs,
   getLatestCommit,
   getLatestTag,
   getPackageVersion,
@@ -301,6 +361,8 @@ module.exports = {
   getBranches,
   getCommits,
   getTags,
+  createTag,
+  deleteTag,
   listProjects,
   getMergeRequests,
   getMergeRequestDetails,
