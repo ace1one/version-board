@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 export default function SettingsDrawer({ config, onClose, onSave }) {
   const [gitlabUrl, setGitlabUrl] = useState(config.gitlabUrl || '');
@@ -17,6 +17,29 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
   const [browseResults, setBrowseResults] = useState([]);
   const [browseLoading, setBrowseLoading] = useState(false);
   const [debounceTimer, setDebounceTimer] = useState(null);
+
+  const drawerBodyRef = useRef(null);
+  const gitlabUrlRef = useRef(null);
+  const searchInputRef = useRef(null);
+
+  // Smart initial scroll & focus:
+  // If connection is empty -> scroll to top and focus GitLab URL
+  // If connection is already configured -> focus repository search
+  useEffect(() => {
+    const isCredsEmpty = !config.gitlabUrl || !config.token;
+    if (isCredsEmpty) {
+      if (drawerBodyRef.current) {
+        drawerBodyRef.current.scrollTop = 0;
+      }
+      setTimeout(() => {
+        gitlabUrlRef.current?.focus();
+      }, 50);
+    } else {
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 50);
+    }
+  }, []);
 
   const fetchRepos = useCallback(async (search = '') => {
     if (!gitlabUrl || !token) return;
@@ -711,13 +734,19 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
             <button className="btn btn-ghost btn-icon" onClick={onClose} title="Close">✕</button>
           </div>
 
-          <div className="drawer-body">
+          <div className="drawer-body" ref={drawerBodyRef}>
             {/* GitLab Connection */}
             <fieldset className="field-group">
               <legend>GitLab connection</legend>
               <label>
                 GitLab base URL
-                <input type="text" placeholder="https://gitlab-01.f1soft.com" value={gitlabUrl} onChange={(e) => setGitlabUrl(e.target.value)} />
+                <input
+                  ref={gitlabUrlRef}
+                  type="text"
+                  placeholder="https://gitlab-01.f1soft.com"
+                  value={gitlabUrl}
+                  onChange={(e) => setGitlabUrl(e.target.value)}
+                />
               </label>
               <label>
                 Personal Access Token
@@ -777,12 +806,12 @@ export default function SettingsDrawer({ config, onClose, onSave }) {
               <div className="search-input-wrapper">
                 <span className="search-icon">🔍</span>
                 <input
+                  ref={searchInputRef}
                   type="text"
                   placeholder="Search and add GitLab repositories..."
                   value={browseSearch}
                   onChange={(e) => handleBrowseSearch(e.target.value)}
                   className="search-input"
-                  autoFocus
                 />
               </div>
               
