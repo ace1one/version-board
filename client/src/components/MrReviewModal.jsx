@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import DiffViewer from './DiffViewer';
-import { fmtDate } from '../utils/helpers';
+import CommitDetailModal from './CommitDetailModal';
+import { fmtDate, timeAgo } from '../utils/helpers';
 import {
   PullRequestIcon,
   GitBranchIcon,
@@ -11,6 +12,7 @@ import {
   CommitIcon,
   FileCodeIcon,
   RefreshIcon,
+  CopyIcon,
 } from './Icons';
 
 export default function MrReviewModal({
@@ -29,6 +31,8 @@ export default function MrReviewModal({
   const [selectedFileIdx, setSelectedFileIdx] = useState(0);
   const [fileFilter, setFileFilter] = useState('');
   const [showSidebar, setShowSidebar] = useState(true);
+  const [selectedCommitSha, setSelectedCommitSha] = useState(null);
+  const [copiedBranch, setCopiedBranch] = useState(null); // 'source' | 'target' | null
 
   // Merge execution state
   const [merging, setMerging] = useState(false);
@@ -36,6 +40,13 @@ export default function MrReviewModal({
   const [mergeSuccess, setMergeSuccess] = useState(false);
   const [shouldRemoveSource, setShouldRemoveSource] = useState(true); // Default checked like GitLab
   const [squash, setSquash] = useState(false);
+
+  const handleCopyBranch = (branchName, type) => {
+    if (!branchName) return;
+    navigator.clipboard.writeText(branchName);
+    setCopiedBranch(type);
+    setTimeout(() => setCopiedBranch(null), 1800);
+  };
 
   const effectiveToken = config.token || sessionStorage.getItem('vb_session_token') || '';
   const effectiveGitlabUrl = config.gitlabUrl || sessionStorage.getItem('vb_session_gitlab_url') || '';
@@ -160,37 +171,67 @@ export default function MrReviewModal({
     <div className="modal-backdrop mr-review-backdrop" onClick={onClose}>
       <div className="modal-card mr-review-modal" onClick={(e) => e.stopPropagation()}>
         {/* MODAL HEADER */}
-        <div className="modal-header">
-          <div className="modal-title-wrap">
+        <div className="modal-header mr-modal-header">
+          <div className="modal-title-wrap" style={{ flex: 1, minWidth: 0 }}>
             <span className="modal-icon-badge">
               <PullRequestIcon size={18} />
             </span>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {/* Title & conflict / status badge row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
                 <h3 className="modal-title">!{mrId} {mrDetails?.title || 'Merge Request'}</h3>
-                {mrDetails && (
-                  <span className={`state-badge ${isMerged ? 'merged' : mrDetails.state}`}>
-                    {isMerged ? 'merged' : mrDetails.state}
-                  </span>
-                )}
                 {hasConflicts && (
                   <span className="conflict-badge">
                     <AlertTriangleIcon size={12} /> Conflicts
                   </span>
                 )}
+                {isMergeable && (
+                  <span className="ready-badge">
+                    <CheckIcon size={12} /> Ready
+                  </span>
+                )}
               </div>
+
+              {/* GitLab-style MR Request Line (Clean 'he/she requested to merge ... into ...') */}
+              {mrDetails && (
+                <div className="gitlab-mr-request-line">
+                  <span className={`mr-state-pill ${isMerged ? 'merged' : (isClosed ? 'closed' : 'opened')}`}>
+                    <GitMergeIcon size={12} />
+                    {isMerged ? 'Open' : (isClosed ? 'Closed' : mrDetails.state === 'opened' ? 'Open' : mrDetails.state)}
+                  </span>
+                  <span className="mr-request-sentence">
+                    <strong className="mr-author-name">{mrDetails.author || 'Author'}</strong> requested to merge{' '}
+                    <span className="gitlab-branch-pill" title={`Source branch: ${mrDetails.sourceBranch}`}>
+                      <span className="gitlab-branch-name">{mrDetails.sourceBranch}</span>
+                      <button
+                        type="button"
+                        className="gitlab-copy-inline-btn"
+                        onClick={() => handleCopyBranch(mrDetails.sourceBranch, 'source')}
+                        title="Copy source branch name"
+                      >
+                        {copiedBranch === 'source' ? <CheckIcon size={11} className="copy-ok-icon" /> : <CopyIcon size={11} />}
+                      </button>
+                    </span>{' '}
+                    into{' '}
+                    <span className="gitlab-branch-pill" title={`Target branch: ${mrDetails.targetBranch}`}>
+                      <span className="gitlab-branch-name">{mrDetails.targetBranch}</span>
+                      <button
+                        type="button"
+                        className="gitlab-copy-inline-btn"
+                        onClick={() => handleCopyBranch(mrDetails.targetBranch, 'target')}
+                        title="Copy target branch name"
+                      >
+                        {copiedBranch === 'target' ? <CheckIcon size={11} className="copy-ok-icon" /> : <CopyIcon size={11} />}
+                      </button>
+                    </span>{' '}
+                    <span className="mr-time-text">{mrDetails.createdAt ? timeAgo(mrDetails.createdAt) : ''}</span>
+                  </span>
+                </div>
+              )}
+
+              {/* Sub-meta details: Project, Assignees, Reviewers */}
               <div className="mr-header-meta-row">
                 <span className="mr-project-label">{project?.label}</span>
-                <span>•</span>
-                <span className="branch-path-pill">
-                  <GitBranchIcon size={11} /> {mrDetails?.sourceBranch || '…'} → {mrDetails?.targetBranch || '…'}
-                </span>
-                {mrDetails?.author && (
-                  <>
-                    <span>•</span>
-                    <span>by <strong>{mrDetails.author}</strong></span>
-                  </>
-                )}
                 {assigneesList.length > 0 && (
                   <>
                     <span>•</span>
@@ -516,21 +557,64 @@ export default function MrReviewModal({
                 {changesData.commits?.length === 0 && (
                   <div className="tab-empty">No commits listed for this MR</div>
                 )}
-                {changesData.commits?.map((c) => (
-                  <div key={c.id} className="list-item commit-list-item">
-                    <div className="list-item-head">
-                      <span className="code-pill">{c.shortId}</span>
-                      <span className="list-item-title">{c.title}</span>
+                {changesData.commits?.map((c) => {
+                  const commitGitlabUrl = c.webUrl || (project?.webUrl ? `${project.webUrl.replace(/\/+$/, '')}/-/commit/${c.id}` : (effectiveGitlabUrl ? `${effectiveGitlabUrl.replace(/\/+$/, '')}/${project?.key}/-/commit/${c.id}` : ''));
+                  return (
+                    <div
+                      key={c.id || c.shortId}
+                      className="list-item commit-list-item clickable-commit-row"
+                      onClick={() => setSelectedCommitSha(c.id || c.shortId)}
+                      title="Click to view commit differences"
+                    >
+                      <div className="list-item-head">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                          <span className="code-pill">{c.shortId || (c.id && c.id.slice(0, 8))}</span>
+                          <span className="list-item-title">{c.title}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            style={{ padding: '3px 9px', fontSize: '11.5px', height: '25px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                            onClick={() => setSelectedCommitSha(c.id || c.shortId)}
+                          >
+                            <FileCodeIcon size={12} /> View Diff
+                          </button>
+                          {commitGitlabUrl && (
+                            <a
+                              href={commitGitlabUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="btn btn-ghost"
+                              style={{ padding: '2px 8px', fontSize: '11.5px', height: '25px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              title="Open commit in GitLab"
+                            >
+                              GitLab <ExternalLinkIcon size={10} />
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                      <div className="list-item-meta">
+                        <span>by <strong>{c.author}</strong></span>
+                        <span>{timeAgo(c.date)} ({fmtDate(c.date)})</span>
+                      </div>
                     </div>
-                    <div className="list-item-meta">
-                      <span>by <strong>{c.author}</strong></span>
-                      <span>{fmtDate(c.date)}</span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </>
+        )}
+
+        {/* In-App Commit Diff Modal when a commit is clicked */}
+        {selectedCommitSha && (
+          <CommitDetailModal
+            isOpen={!!selectedCommitSha}
+            commitSha={selectedCommitSha}
+            project={project}
+            config={config}
+            onClose={() => setSelectedCommitSha(null)}
+          />
         )}
       </div>
     </div>

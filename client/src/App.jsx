@@ -8,6 +8,7 @@ import TableView from './components/TableView';
 import EmptyState from './components/EmptyState';
 import SettingsDrawer from './components/SettingsDrawer';
 import DetailView from './components/DetailView';
+import GitCheatsheetModal from './components/GitCheatsheetModal';
 
 const DEFAULT_STATE = {
   gitlabUrl: '',
@@ -25,6 +26,7 @@ export default function App() {
   const [connStatus, setConnStatus] = useState('');
   const [connStatusClass, setConnStatusClass] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [gitDocsOpen, setGitDocsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('vb_view_mode') || 'grid');
@@ -148,6 +150,7 @@ export default function App() {
               connStatusClass={connStatusClass}
               onSettings={handleOpenSettings}
               onRefresh={refreshAll}
+              onOpenGitDocs={() => setGitDocsOpen(true)}
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
               statusFilter={statusFilter}
@@ -174,10 +177,19 @@ export default function App() {
                 onSave={handleSaveSettings}
               />
             )}
+            {gitDocsOpen && (
+              <GitCheatsheetModal
+                isOpen={gitDocsOpen}
+                onClose={() => setGitDocsOpen(false)}
+              />
+            )}
           </div>
         } />
         <Route path="/detail/:key" element={
           <DetailView config={config} results={results} />
+        } />
+        <Route path="/git-docs" element={
+          <GitCheatsheetModal isOpen={true} onClose={() => window.history.back()} />
         } />
       </Routes>
     </BrowserRouter>

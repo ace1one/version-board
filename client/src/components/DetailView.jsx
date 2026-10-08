@@ -6,6 +6,7 @@ import MrReviewModal from './MrReviewModal';
 import MrCreateModal from './MrCreateModal';
 import TagCreateModal from './TagCreateModal';
 import CommitDetailModal from './CommitDetailModal';
+import GitCheatsheetModal from './GitCheatsheetModal';
 import {
   GitBranchIcon,
   TagIcon,
@@ -40,6 +41,7 @@ export default function DetailView({ config, results }) {
   const [selectedCommitSha, setSelectedCommitSha] = useState(null);
   const [showCreateMrModal, setShowCreateMrModal] = useState(false);
   const [showCreateTagModal, setShowCreateTagModal] = useState(false);
+  const [showGitGuideModal, setShowGitGuideModal] = useState(false);
   const [deletingTagName, setDeletingTagName] = useState(null);
 
   // Branches & Commits & Tags state
@@ -381,6 +383,15 @@ export default function DetailView({ config, results }) {
           </div>
         </div>
         <div className="topbar-actions">
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => setShowGitGuideModal(true)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: '#ff7b72', borderColor: 'rgba(255, 123, 114, 0.35)' }}
+            title="Open Interactive Git Commands Guide"
+          >
+            <span style={{ display: 'inline-flex', color: '#ff7b72' }}>&gt;_</span> Git Guide
+          </button>
           {/* Quick GitLab Shortcut Links */}
           <a href={`${cleanWebUrl}/-/pipelines`} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" title="GitLab Pipelines">
             <RocketIcon size={13} style={{ marginRight: 5 }} /> Pipelines
@@ -1003,6 +1014,14 @@ export default function DetailView({ config, results }) {
           project={match}
           config={config}
           onSelectSha={(sha) => setSelectedCommitSha(sha)}
+        />
+      )}
+
+      {/* Interactive Git Commands Guide Modal */}
+      {showGitGuideModal && (
+        <GitCheatsheetModal
+          isOpen={showGitGuideModal}
+          onClose={() => setShowGitGuideModal(false)}
         />
       )}
     </div>

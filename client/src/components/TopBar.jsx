@@ -6,6 +6,7 @@ export default function TopBar({
   connStatusClass,
   onSettings,
   onRefresh,
+  onOpenGitDocs,
   searchQuery,
   onSearchChange,
   statusFilter,
@@ -62,6 +63,15 @@ export default function TopBar({
           </div>
 
           <span className={`conn-status ${connStatusClass}`}>{connStatus}</span>
+          <button
+            type="button"
+            className="btn btn-ghost btn-git-guide-nav"
+            onClick={onOpenGitDocs}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#ff7b72', borderColor: 'rgba(255, 123, 114, 0.35)' }}
+            title="Open Interactive Git Commands Guide & Workflow Simulator"
+          >
+            <span style={{ display: 'inline-flex', color: '#ff7b72' }}>&gt;_</span> Git Guide
+          </button>
           <button className="btn btn-ghost" onClick={onSettings} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
             <CogIcon size={14} /> Settings
           </button>

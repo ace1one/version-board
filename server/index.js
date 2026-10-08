@@ -18,10 +18,18 @@ app.all('/api/*', (req, res) => {
 });
 
 // Serve React build (SPA)
-app.use(express.static(REACT_DIST));
+app.use(express.static(REACT_DIST, {
+  maxAge: '1h',
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('index.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
+  }
+}));
 
 // SPA fallback — serve index.html for any non-API route
 app.get('*', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile(path.join(REACT_DIST, 'index.html'));
 });
 

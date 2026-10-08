@@ -247,3 +247,65 @@ export function FolderIcon({ className = '', size = 14 }) {
   );
 }
 
+export function TerminalIcon({ className = '', size = 15 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <polyline points="4 17 10 11 4 5"></polyline>
+      <line x1="12" y1="19" x2="20" y2="19"></line>
+    </svg>
+  );
+}
+
+export function BookIcon({ className = '', size = 15 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+    </svg>
+  );
+}
+
+export function PlayIcon({ className = '', size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none" className={className}>
+      <polygon points="5 3 19 12 5 21 5 3"></polygon>
+    </svg>
+  );
+}
+
+export function PauseIcon({ className = '', size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none" className={className}>
+      <rect x="6" y="4" width="4" height="16"></rect>
+      <rect x="14" y="4" width="4" height="16"></rect>
+    </svg>
+  );
+}
+
+export function CloudIcon({ className = '', size = 15 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+    </svg>
+  );
+}
+
+export function LayersIcon({ className = '', size = 15 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+      <polyline points="2 17 12 22 22 17"></polyline>
+      <polyline points="2 12 12 17 22 12"></polyline>
+    </svg>
+  );
+}
+
+export function GitLogoIcon({ className = '', size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M2.59 13.41L11 4.99a2.001 2.001 0 0 1 2.83 0l7.58 7.59a2.001 2.001 0 0 1 0 2.83l-8.41 8.42a2.001 2.001 0 0 1-2.83 0l-7.58-7.59a2.001 2.001 0 0 1 0-2.83zm8.99-3.41v2.17a2.002 2.002 0 0 1 .59 2.83l-2.17 2.18a2.002 2.002 0 0 1-2.83 0 2.002 2.002 0 0 1 0-2.83l1.83-1.83a2.002 2.002 0 0 1 .58-.52V10a2.002 2.002 0 0 1-.58-.52l-1.83-1.83a2.002 2.002 0 0 1 0-2.83 2.002 2.002 0 0 1 2.83 0l2.17 2.18a2.002 2.002 0 0 1-.59 2.83v.17z"/>
+    </svg>
+  );
+}
+
+

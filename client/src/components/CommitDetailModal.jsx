@@ -124,7 +124,7 @@ export default function CommitDetailModal({
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop commit-detail-backdrop" onClick={onClose}>
       <div
         className="modal-card mr-review-modal commit-detail-modal"
         onClick={(e) => e.stopPropagation()}
