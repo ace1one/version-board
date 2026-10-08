@@ -18,7 +18,7 @@ export default function EmptyState({ onAddFirst, isSearch }) {
     <section className="empty-state">
       <div className="empty-icon">◈</div>
       <h2 className="empty-title">Welcome to gitCheckout</h2>
-      <p>Track repo versions across all your Git projects</p>
+      <p>View, sync and manage all your Git repositories in one place</p>
       <div className="empty-features">
         <div className="empty-feature">
           <span className="empty-feature-icon">

@@ -22,7 +22,7 @@ export default function TopBar({
           <span className="brand-mark">◈</span>
           <div>
             <h1>gitCheckout</h1>
-            <p className="subtitle">GitLab Version &amp; Base Subtree Tracker</p>
+            <p className="subtitle">View, Sync &amp; Manage Git Repositories</p>
           </div>
         </div>
 
