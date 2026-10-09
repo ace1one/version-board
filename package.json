@@ -1,7 +1,7 @@
 {
-  "name": "gitlab-version-tracker",
+  "name": "git-clone",
   "version": "1.0.0",
-  "description": "Local web app to track default-branch versions across GitLab projects, including git-subtree base sync status.",
+  "description": "gitClone — View, Sync & Manage Git Repositories and base sync status.",
   "main": "server/index.js",
   "type": "commonjs",
   "engines": {

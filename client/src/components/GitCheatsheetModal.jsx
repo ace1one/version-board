@@ -424,9 +424,9 @@ const WORKFLOW_RECIPES = [
       },
       {
         step: 4,
-        title: 'Review & merge via gitCheckout MR Drawer',
-        cmd: '# Click "MRs" in gitCheckout top bar or project card to review & accept!',
-        explain: 'Inspect commit diffs, approvals, and merge directly inside gitCheckout.',
+        title: 'Review & merge via gitClone MR Drawer',
+        cmd: '# Click "MRs" in gitClone top bar or project card to review & accept!',
+        explain: 'Inspect commit diffs, approvals, and merge directly inside gitClone.',
       },
     ],
   },

@@ -34,5 +34,5 @@ app.get('*', (_req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`GitLab Version Tracker running on http://localhost:${PORT}`);
+  console.log(`gitClone running on http://localhost:${PORT}`);
 });

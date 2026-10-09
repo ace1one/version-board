@@ -1,4 +1,4 @@
-# gitCheckout
+# gitClone
 
 A local web app that shows, at a glance, the default-branch status of every GitLab project you care about — latest commit, latest tag, and a `package.json` version if present. It also has special support for projects that pull in a **base project via `git subtree`** (like `BankXP for Prabhu Bank` pulling `banksmart-client-web`), showing whether the subtree is up to date with the base project's `master` and, if not, how many commits behind and what they are.
 
