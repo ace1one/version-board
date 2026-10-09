@@ -302,10 +302,6 @@ export default function DetailView({ config, results }) {
     setCommitsPage(1);
     fetchCommitsForBranch(newBranch, 1, false);
 
-    if (newBranch === initialMatch?.defaultBranch && !dynamicData) {
-      return;
-    }
-
     setBranchStatusLoading(true);
     try {
       const pConfig = (config.projects || []).find((p) => p.path === initialMatch?.key) || {};
@@ -328,6 +324,13 @@ export default function DetailView({ config, results }) {
       setBranchStatusLoading(false);
     }
   };
+
+  // Initial fetch for current branch on mount
+  useEffect(() => {
+    if (initialMatch?.key) {
+      handleBranchChange(selectedBranch || initialMatch.defaultBranch);
+    }
+  }, [initialMatch?.key]);
 
   // Initial commits fetch for default branch
   useEffect(() => {
@@ -481,6 +484,17 @@ export default function DetailView({ config, results }) {
                 <DataRow label="Commit title" value={match.commitTitle || '—'} dim />
                 <DataRow label="Latest tag" value={match.latestTag || '—'} />
                 <DataRow label="package.json ver." value={match.packageVersion || '—'} />
+                {match.stimulusVersion && (
+                  <DataRow
+                    label="Stimulus pkg ver."
+                    value={
+                      <span className="stimulus-pill">
+                        v{match.stimulusVersion}
+                        {match.stimulusPath ? ` (${match.stimulusPath})` : ''}
+                      </span>
+                    }
+                  />
+                )}
                 <div className="card-footer">
                   <a className="card-link" href={cleanWebUrl} target="_blank" rel="noopener">open in gitlab →</a>
                 </div>

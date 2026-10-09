@@ -6,6 +6,7 @@ import TopBar from './components/TopBar';
 import Board from './components/Board';
 import TableView from './components/TableView';
 import EmptyState from './components/EmptyState';
+import DashboardLoader from './components/DashboardLoader';
 import SettingsDrawer from './components/SettingsDrawer';
 import DetailView from './components/DetailView';
 import GitCheatsheetModal from './components/GitCheatsheetModal';
@@ -22,7 +23,23 @@ const DEFAULT_STATE = {
 
 export default function App() {
   const [config, setConfig] = useState(() => loadConfig() || DEFAULT_STATE);
-  const [results, setResults] = useState([]);
+  const [results, setResults] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem('vb_last_results');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [loading, setLoading] = useState(() => {
+    const cfg = loadConfig() || DEFAULT_STATE;
+    const hasConfig = Boolean(cfg.gitlabUrl && cfg.token && cfg.projects && cfg.projects.length > 0);
+    try {
+      const cached = sessionStorage.getItem('vb_last_results');
+      if (cached && JSON.parse(cached)?.length > 0) return false;
+    } catch {}
+    return hasConfig;
+  });
   const [connStatus, setConnStatus] = useState('');
   const [connStatusClass, setConnStatusClass] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -49,6 +66,7 @@ export default function App() {
         (r.label || '').toLowerCase().includes(q) ||
         (r.key || '').toLowerCase().includes(q) ||
         (r.packageVersion || '').toLowerCase().includes(q) ||
+        (r.stimulusVersion || '').toLowerCase().includes(q) ||
         (r.latestTag || '').toLowerCase().includes(q);
       if (!matchSearch) return false;
     }
@@ -76,9 +94,11 @@ export default function App() {
   const refreshAll = useCallback(async () => {
     if (!config.gitlabUrl || !config.token || config.projects.length === 0) {
       setResults([]);
+      setLoading(false);
       return;
     }
 
+    setLoading(true);
     setConnStatus('loading…');
     setConnStatusClass('');
 
@@ -104,6 +124,8 @@ export default function App() {
     } catch (e) {
       setConnStatus('error: ' + e.message);
       setConnStatusClass('err');
+    } finally {
+      setLoading(false);
     }
   }, [config]);
 
@@ -138,7 +160,8 @@ export default function App() {
   const handleOpenSettings = () => setSettingsOpen(true);
   const handleCloseSettings = () => setSettingsOpen(false);
 
-  const showEmpty = !config.gitlabUrl || config.projects.length === 0 || filteredResults.length === 0;
+  const hasConfig = Boolean(config.gitlabUrl && config.token && config.projects && config.projects.length > 0);
+  const isFilterActive = Boolean(searchQuery || statusFilter !== 'all');
 
   return (
     <BrowserRouter>
@@ -160,13 +183,15 @@ export default function App() {
               stats={stats}
             />
             <main>
-              {showEmpty && (
-                <EmptyState onAddFirst={handleOpenSettings} isSearch={!searchQuery ? false : true} />
-              )}
-              {!showEmpty && viewMode === 'grid' && (
+              {loading && results.length === 0 ? (
+                <DashboardLoader count={config.projects?.length || 6} />
+              ) : !hasConfig || results.length === 0 ? (
+                <EmptyState onAddFirst={handleOpenSettings} isSearch={false} />
+              ) : filteredResults.length === 0 ? (
+                <EmptyState onAddFirst={handleOpenSettings} isSearch={isFilterActive} />
+              ) : viewMode === 'grid' ? (
                 <Board results={filteredResults} gitlabUrl={config.gitlabUrl} />
-              )}
-              {!showEmpty && viewMode === 'table' && (
+              ) : (
                 <TableView results={filteredResults} gitlabUrl={config.gitlabUrl} />
               )}
             </main>

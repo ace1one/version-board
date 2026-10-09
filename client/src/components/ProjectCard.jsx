@@ -43,15 +43,10 @@ export default function ProjectCard({ result }) {
         <DataRow label="Branch" value={result.defaultBranch || '—'} />
         <DataRow label="Latest tag" value={result.latestTag || '—'} />
         <DataRow label="Version" value={result.packageVersion || '—'} />
-        {result.commitTitle && (
+        {result.stimulusVersion && (
           <DataRow
-            label="Latest commit"
-            value={
-              <span title={`by ${result.commitAuthor || 'unknown'} (${fmtDate(result.commitDate)})`}>
-                "{result.commitTitle.length > 28 ? `${result.commitTitle.slice(0, 28)}…` : result.commitTitle}"
-              </span>
-            }
-            dim
+            label="Stimulus"
+            value={<span className="stimulus-pill">v{result.stimulusVersion}</span>}
           />
         )}
         {result.commitDate && (

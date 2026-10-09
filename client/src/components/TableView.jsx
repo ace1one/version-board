@@ -83,11 +83,27 @@ export default function TableView({ results }) {
                 </td>
                 <td>
                   {r.monorepo ? (
-                    <span className="code-pill" style={{ color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.3)' }}>
-                      {r.monorepo.workspaces?.length || 0} workspaces
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-start' }}>
+                      <span className="code-pill" style={{ color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.3)' }}>
+                        {r.monorepo.workspaces?.length || 0} workspaces
+                      </span>
+                      {r.stimulusVersion && (
+                        <span className="stimulus-pill" style={{ fontSize: '11px', padding: '1px 6px' }}>
+                          Stimulus v{r.stimulusVersion}
+                        </span>
+                      )}
+                    </div>
                   ) : (
-                    <strong>{r.packageVersion || '—'}</strong>
+                    <div>
+                      <strong>{r.packageVersion || '—'}</strong>
+                      {r.stimulusVersion && (
+                        <div style={{ marginTop: '2px' }}>
+                          <span className="stimulus-pill" style={{ fontSize: '11px', padding: '1px 6px' }}>
+                            Stimulus v{r.stimulusVersion}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </td>
                 <td>

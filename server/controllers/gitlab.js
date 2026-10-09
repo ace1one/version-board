@@ -152,13 +152,25 @@ async function getMonorepoStatus(gitlabUrl, token, projectId, ref) {
       // Remove leading ./ and trailing slashes
       const cleanPath = wsPath.replace(/^\.\//, '').replace(/\/+$/, '');
       if (isIgnoredWorkspace(cleanPath)) return null;
-      const pkgFilePath = `${cleanPath}/package.json`;
+      const possiblePkgPaths = cleanPath.includes('stimulus')
+        ? [
+            `${cleanPath}/src/packages/package.json`,
+            `${cleanPath}/packages/package.json`,
+            `${cleanPath}/package.json`,
+          ]
+        : [
+            `${cleanPath}/package.json`,
+            `${cleanPath}/src/packages/package.json`,
+            `${cleanPath}/packages/package.json`,
+          ];
 
       try {
-        const [pkgText, pathCommits] = await Promise.all([
-          gitlabApi.getRawFileContent(gitlabUrl, token, projectId, pkgFilePath, ref).catch(() => null),
-          gitlabApi.getCommitsByPath(gitlabUrl, token, projectId, ref, cleanPath, 1, 1).catch(() => []),
-        ]);
+        let pkgText = null;
+        for (const cf of possiblePkgPaths) {
+          pkgText = await gitlabApi.getRawFileContent(gitlabUrl, token, projectId, cf, ref).catch(() => null);
+          if (pkgText) break;
+        }
+        const pathCommits = await gitlabApi.getCommitsByPath(gitlabUrl, token, projectId, ref, cleanPath, 1, 1).catch(() => []);
 
         if (!pkgText) {
           // If no package.json in this workspace folder, still show commit if folder exists
@@ -247,6 +259,28 @@ async function getMonorepoStatus(gitlabUrl, token, projectId, ref) {
   };
 }
 
+async function findStimulusVersion(gitlabUrl, token, projectId, ref, customPath) {
+  const candidatePaths = [
+    customPath,
+    'stimulus/src/packages/package.json',
+    'stimulus/src/packages/packagejson',
+    'packages/stimulus/package.json',
+    'src/packages/stimulus/package.json',
+    'stimulus/package.json',
+    'packages/stimulus/src/package.json',
+    'src/packages/package.json',
+    'packages/package.json',
+  ].filter(Boolean);
+
+  for (const p of candidatePaths) {
+    try {
+      const ver = await gitlabApi.getPackageVersion(gitlabUrl, token, projectId, ref, p);
+      if (ver) return { path: p, version: ver };
+    } catch {}
+  }
+  return null;
+}
+
 // --- Controller functions (called by routes) ---
 
 async function testConnection(req, res) {
@@ -273,11 +307,12 @@ async function checkAll(req, res) {
       const info = await gitlabApi.getProjectInfo(gitlabUrl, token, p.path);
       const ref = p.ref || info.default_branch;
 
-      const [commit, tag, pkgVersion, pipeline] = await Promise.all([
+      const [commit, tag, pkgVersion, pipeline, stimulusInfo] = await Promise.all([
         gitlabApi.getLatestCommit(gitlabUrl, token, info.id, ref),
         gitlabApi.getLatestTag(gitlabUrl, token, info.id).catch(() => null),
         gitlabApi.getPackageVersion(gitlabUrl, token, info.id, ref, pkgPath),
         gitlabApi.getLatestPipeline(gitlabUrl, token, info.id, ref).catch(() => null),
+        findStimulusVersion(gitlabUrl, token, info.id, ref, p.stimulusPath),
       ]);
 
       const out = {
@@ -294,6 +329,8 @@ async function checkAll(req, res) {
         latestTag: tag ? tag.name : null,
         tagDate: tag ? (tag.commit && tag.commit.committed_date) : null,
         packageVersion: pkgVersion,
+        stimulusVersion: stimulusInfo ? stimulusInfo.version : null,
+        stimulusPath: stimulusInfo ? stimulusInfo.path : null,
         pipeline: pipeline ? { id: pipeline.id, status: pipeline.status, webUrl: pipeline.web_url } : null,
       };
 
@@ -705,10 +742,11 @@ async function getBranchStatus(req, res) {
     const pId = projectId || (await gitlabApi.getProjectInfo(gitlabUrl, token, projectPath)).id;
     const pkgPath = packageJsonPath || 'package.json';
 
-    const [commit, tag, pkgVersion] = await Promise.all([
+    const [commit, tag, pkgVersion, stimulusInfo] = await Promise.all([
       gitlabApi.getLatestCommit(gitlabUrl, token, pId, ref),
       gitlabApi.getLatestTag(gitlabUrl, token, pId).catch(() => null),
       gitlabApi.getPackageVersion(gitlabUrl, token, pId, ref, pkgPath),
+      findStimulusVersion(gitlabUrl, token, pId, ref, req.body.stimulusPath),
     ]);
 
     const result = {
@@ -720,6 +758,8 @@ async function getBranchStatus(req, res) {
       commitTitle: commit ? commit.title : null,
       latestTag: tag ? tag.name : null,
       packageVersion: pkgVersion,
+      stimulusVersion: stimulusInfo ? stimulusInfo.version : null,
+      stimulusPath: stimulusInfo ? stimulusInfo.path : null,
     };
 
     if (subtreePath && basePath) {

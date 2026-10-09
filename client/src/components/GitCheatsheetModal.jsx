@@ -15,6 +15,7 @@ import {
   SearchIcon,
   FileCodeIcon,
   GitLogoIcon,
+  RocketIcon,
 } from './Icons';
 
 export const GIT_COMMANDS = [
@@ -25,19 +26,22 @@ export const GIT_COMMANDS = [
     title: 'git init',
     category: 'setup',
     tag: 'SETUP',
-    shortDesc: 'Create a repository',
-    desc: 'Initializes a new, empty Git repository or reinitializes an existing one. Creates the hidden .git directory containing all metadata and version history.',
-    whenToUse: 'When starting a brand new project locally or turning an existing project folder into a Git version-controlled repository.',
+    shortDesc: 'Create a new local repository',
+    desc: 'Initializes a new, empty Git repository in the current folder. Creates the hidden .git directory containing all Git internal objects, refs, and version history.',
+    whenToUse: 'When starting a brand new project locally or turning an existing project folder into a Git-controlled repository.',
     output: `Initialized empty Git repository in /workspace/project/.git/
 [main (root-commit)] Repository initialized`,
     zonesActive: ['working', 'local'],
     animationType: 'init',
+    fromZone: 'working',
+    toZone: 'local',
+    stepExplain: 'Creates the hidden .git metadata store and establishes the default initial branch.',
     flags: [
-      { flag: 'git init', desc: 'Initialize standard repository with a default working directory' },
-      { flag: 'git init -b main', desc: 'Initialize with default initial branch name set to "main"' },
-      { flag: 'git init --bare', desc: 'Create a bare repository (no working tree, used for central remotes)' },
+      { flag: 'git init', desc: 'Initialize standard repository in current folder' },
+      { flag: 'git init -b main', desc: 'Initialize with default branch explicitly named "main"' },
+      { flag: 'git init --bare', desc: 'Create a bare repository without a working directory (for remotes)' },
     ],
-    proTip: 'Configure your global default branch once with: `git config --global init.defaultBranch main` to avoid the legacy `master` naming.',
+    proTip: 'Configure your global default branch with: git config --global init.defaultBranch main',
   },
   {
     id: 'git-status',
@@ -46,9 +50,9 @@ export const GIT_COMMANDS = [
     title: 'git status',
     category: 'check',
     tag: 'CHECK',
-    shortDesc: 'Inspect changes',
-    desc: 'Displays the state of the working tree and the staging area. Shows which changes are staged for the next commit, which are unstaged, and which files are untracked.',
-    whenToUse: 'Run frequently throughout your day to inspect what files you modified before staging or committing.',
+    shortDesc: 'Inspect working tree & staging state',
+    desc: 'Displays the state of the working tree and the staging area. Shows which modified files are staged for the next commit, which are unstaged, and untracked files.',
+    whenToUse: 'Run frequently throughout development before staging, committing, or switching branches to prevent accidental commits.',
     output: `On branch main
 Changes not staged for commit:
   (use "git add <file>..." to update what will be committed)
@@ -60,12 +64,15 @@ Untracked files:
 	src/api/auth.js`,
     zonesActive: ['working', 'staging'],
     animationType: 'status',
+    fromZone: 'working',
+    toZone: 'staging',
+    stepExplain: 'Scans the working tree against the index to identify modified, deleted, and untracked files.',
     flags: [
       { flag: 'git status', desc: 'Full detailed status overview' },
       { flag: 'git status -s', desc: 'Short-format status (compact M, A, ?? indicators)' },
-      { flag: 'git status -b', desc: 'Show branch and tracking info even in short-format' },
+      { flag: 'git status -b', desc: 'Show branch and upstream tracking info in short-format' },
     ],
-    proTip: 'Use `git status -s` for a lightning fast summary: `??` = untracked, ` M` = unstaged, `M ` = staged.',
+    proTip: 'Use `git status -s` for lightning-fast reads: `??` = untracked, ` M` = unstaged, `M ` = staged.',
   },
   {
     id: 'git-add',
@@ -74,22 +81,25 @@ Untracked files:
     title: 'git add',
     category: 'stage',
     tag: 'STAGE',
-    shortDesc: 'Move files to staging',
-    desc: 'Adds file contents from the Working Tree into the Staging Area (the Index). Prepares the precise snapshot that will be saved in your next commit.',
-    whenToUse: 'After making changes in your editor, stage the files that belong together in a logical commit.',
+    shortDesc: 'Move working changes to staging area',
+    desc: 'Adds file contents from the Working Tree into the Staging Area (the Index). Prepares the precise snapshot that will be packaged in your next commit.',
+    whenToUse: 'After making edits in your code editor, stage only the files and lines that belong together in a logical commit.',
     output: `$ git add src/App.jsx src/api/auth.js
 Staged 2 files for commit:
-  + src/App.jsx (modified)
-  + src/api/auth.js (new file)`,
+  + src/App.jsx (modified: +42 -3 lines)
+  + src/api/auth.js (new file: +120 lines)`,
     zonesActive: ['working', 'staging'],
     animationType: 'add',
+    fromZone: 'working',
+    toZone: 'staging',
+    stepExplain: 'Copies modified file snapshots into the staging index, readying them for commit.',
     flags: [
       { flag: 'git add <file>', desc: 'Stage specific file(s)' },
-      { flag: 'git add .', desc: 'Stage all modified and new files in the current directory' },
+      { flag: 'git add .', desc: 'Stage all modified and new files in the current folder' },
       { flag: 'git add -A', desc: 'Stage all modified, new, and deleted files across the whole repo' },
       { flag: 'git add -p', desc: 'Interactive patch mode: review and stage hunk by hunk!' },
     ],
-    proTip: 'Use `git add -p` to stage specific line chunks instead of whole files when you did multiple tasks at once.',
+    proTip: 'Use `git add -p` to stage specific line chunks instead of whole files when you made multiple unrelated edits.',
   },
   {
     id: 'git-commit',
@@ -98,21 +108,23 @@ Staged 2 files for commit:
     title: 'git commit',
     category: 'save',
     tag: 'SAVE',
-    shortDesc: 'Save a snapshot',
-    desc: 'Takes the staged snapshot from the Staging Area and permanently records it into the Local Repository history with an author, timestamp, and unique SHA-1 hash.',
-    whenToUse: 'When you have completed a coherent unit of work, bug fix, or feature step.',
-    output: `[main 4f9e1b2] feat(auth): integrate biometric login and token refresh
- 2 files changed, 48 insertions(+), 6 deletions(-)
+    shortDesc: 'Record staged changes in local repository',
+    desc: 'Stores the current contents of the staging area in a new commit object with a unique SHA hash, author metadata, timestamp, and message, advancing the branch pointer.',
+    whenToUse: 'When you complete a logical unit of work (bug fix, new component, refactor) that passes tests.',
+    output: `[main 8a4c1f9] feat: add user authentication flow and login UI
+ 2 files changed, 162 insertions(+), 3 deletions(-)
  create mode 100644 src/api/auth.js`,
     zonesActive: ['staging', 'local'],
     animationType: 'commit',
+    fromZone: 'staging',
+    toZone: 'local',
+    stepExplain: 'Creates a permanent cryptographic commit snapshot (SHA) in .git and advances HEAD pointer.',
     flags: [
-      { flag: 'git commit -m "msg"', desc: 'Record commit with inline commit message' },
-      { flag: 'git commit -am "msg"', desc: 'Automatically stage modified tracked files and commit' },
-      { flag: 'git commit --amend', desc: 'Modify the most recent commit (add staged files or edit message)' },
-      { flag: 'git commit --amend --no-edit', desc: 'Add newly staged files into last commit without changing message' },
+      { flag: 'git commit -m "feat: message"', desc: 'Record commit with inline commit message' },
+      { flag: 'git commit -am "fix: message"', desc: 'Shortcut: automatically stage tracked modified files and commit' },
+      { flag: 'git commit --amend', desc: 'Modify the most recent commit (change message or add forgotten files)' },
     ],
-    proTip: 'Write commit messages in imperative present tense (e.g. "Add feature" not "Added feature" or "Adds feature").',
+    proTip: 'Follow Conventional Commits: `feat:`, `fix:`, `refactor:`, `chore:`, `docs:` for crystal-clear team changelogs.',
   },
   {
     id: 'git-branch',
@@ -121,95 +133,105 @@ Staged 2 files for commit:
     title: 'git branch',
     category: 'branch',
     tag: 'BRANCH',
-    shortDesc: 'Create a new line',
-    desc: 'Lists, creates, renames, or deletes branches. A branch in Git is simply a lightweight movable pointer to a specific commit.',
-    whenToUse: 'When starting a new feature, bugfix, or experiment without affecting the main production codebase.',
+    shortDesc: 'Create, list, or delete branches',
+    desc: 'Manages lightweight movable pointers to commits. Allows isolated parallel development for features, hotfixes, or experiments without affecting main.',
+    whenToUse: 'Before starting any new task, create a dedicated branch off main so your work remains completely isolated.',
     output: `$ git branch feature/user-profile
+$ git branch -a
 * main
   feature/user-profile
   remotes/origin/main`,
     zonesActive: ['local'],
     animationType: 'branch',
+    fromZone: 'local',
+    toZone: 'local',
+    stepExplain: 'Creates a new named pointer pointing to the current commit without switching to it yet.',
     flags: [
-      { flag: 'git branch', desc: 'List all local branches (* marks current HEAD branch)' },
-      { flag: 'git branch -a', desc: 'List both local and remote-tracking branches' },
-      { flag: 'git branch <name>', desc: 'Create a new branch from current HEAD' },
-      { flag: 'git branch -d <name>', desc: 'Safely delete a merged branch' },
-      { flag: 'git branch -D <name>', desc: 'Force delete a branch regardless of merge status' },
-      { flag: 'git branch -m <new-name>', desc: 'Rename the current active branch' },
+      { flag: 'git branch <name>', desc: 'Create a new branch pointing at current HEAD commit' },
+      { flag: 'git branch -a', desc: 'List all local and remote-tracking branches' },
+      { flag: 'git branch -d <name>', desc: 'Safely delete a branch that has already been merged' },
+      { flag: 'git branch -D <name>', desc: 'Force delete a branch even if unmerged' },
     ],
-    proTip: 'Delete stale local branches whose remote PRs were merged using `git branch --merged | grep -v main | xargs git branch -d`.',
+    proTip: 'Use structured naming: `feature/login`, `bugfix/issue-123`, `chore/deps`, `hotfix/security`.',
   },
   {
     id: 'git-switch',
     num: '06',
     cmd: 'git switch',
-    title: 'git switch / checkout',
+    title: 'git switch',
     category: 'branch',
-    tag: 'MOVE',
-    shortDesc: 'Move HEAD',
-    desc: 'Switches to a specified branch, updating the Working Tree to match that branch’s latest commit snapshot. Modern Git uses `git switch` (introduced in Git 2.23) to separate branch switching from file discarding.',
-    whenToUse: 'When switching between different feature branches, or creating and moving to a new branch.',
-    output: `Switched to a new branch 'feature/user-profile'
-HEAD is now at 4f9e1b2 feat(auth): integrate biometric login`,
-    zonesActive: ['working', 'local'],
+    tag: 'SWITCH',
+    shortDesc: 'Switch active branch / working tree',
+    desc: 'Updates files in the working tree to match the version indexed in the target branch, and updates HEAD to point to that branch.',
+    whenToUse: 'When moving between tasks or starting work on a newly created branch.',
+    output: `$ git switch -c feature/user-profile
+Switched to a new branch 'feature/user-profile'`,
+    zonesActive: ['local', 'working'],
     animationType: 'switch',
+    fromZone: 'local',
+    toZone: 'working',
+    stepExplain: 'Moves HEAD pointer to target branch and updates working directory files to match.',
     flags: [
       { flag: 'git switch <branch>', desc: 'Switch to an existing local branch' },
-      { flag: 'git switch -c <name>', desc: 'Create a new branch AND switch to it immediately' },
-      { flag: 'git switch -', desc: 'Quickly switch back to the previously checked-out branch' },
-      { flag: 'git checkout <branch>', desc: 'Classic command: switch branch (same as git switch)' },
+      { flag: 'git switch -c <name>', desc: 'Create AND immediately switch to a new branch (Modern alternative to git checkout -b)' },
+      { flag: 'git switch -', desc: 'Switch back to the previously active branch (fast toggle!)' },
     ],
-    proTip: 'Use `git switch -` to toggle back and forth between two branches effortlessly.',
+    proTip: '`git switch` is the modern, safe alternative to `git checkout` designed specifically for branch navigation.',
   },
   {
     id: 'git-merge',
     num: '07',
     cmd: 'git merge',
     title: 'git merge',
-    category: 'join',
-    tag: 'JOIN',
-    shortDesc: 'Combine histories',
-    desc: 'Incorporates changes from the named branch into the current active branch. Creates a merge commit if histories have diverged (3-way merge), or advances pointer if fast-forward.',
-    whenToUse: 'When your feature branch is tested and approved and you want to bring its commits into `main` or `develop`.',
+    category: 'branch',
+    tag: 'MERGE',
+    shortDesc: 'Combine histories of two branches',
+    desc: 'Integrates changes from a named branch into the currently checked-out branch by performing a fast-forward or creating a merge commit.',
+    whenToUse: 'When integrating an approved feature branch back into main, or pulling main updates into your feature branch.',
     output: `$ git merge feature/user-profile
-Updating 4f9e1b2..8b3c10a
-Fast-forward (or Merge made by the 'ort' strategy)
- src/components/Profile.jsx | 120 +++++++++++++++++++++++++++++
- 1 file changed, 120 insertions(+)`,
+Updating 8a4c1f9..3d7b2e1
+Fast-forward
+ src/App.jsx         | 42 +++++++++++++++++++++++++++++++++++++++---
+ src/api/auth.js     | 120 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 159 insertions(+), 3 deletions(-)`,
     zonesActive: ['local', 'working'],
     animationType: 'merge',
+    fromZone: 'local',
+    toZone: 'local',
+    stepExplain: 'Combines the histories of two branches, creating a merge commit with two parent commits if diverging.',
     flags: [
-      { flag: 'git merge <branch>', desc: 'Merge named branch into current branch' },
-      { flag: 'git merge --no-ff <branch>', desc: 'Always create a dedicated merge commit (preserves feature history)' },
-      { flag: 'git merge --squash <branch>', desc: 'Combine all branch commits into a single staged change without commit' },
-      { flag: 'git merge --abort', desc: 'Abort an in-progress merge conflict and restore original state' },
+      { flag: 'git merge <branch>', desc: 'Merge specified branch into current branch' },
+      { flag: 'git merge --no-ff <branch>', desc: 'Always create a merge commit even if fast-forward is possible' },
+      { flag: 'git merge --squash <branch>', desc: 'Squash all feature branch commits into a single staged change' },
+      { flag: 'git merge --abort', desc: 'Abort an in-progress merge conflict and restore clean pre-merge state' },
     ],
-    proTip: 'If a merge conflict gets messy and you want to start over cleanly: run `git merge --abort`.',
+    proTip: 'If conflicts occur during merge, resolve conflicts in files, stage them with `git add`, and run `git commit` to finalize.',
   },
   {
     id: 'git-stash',
     num: '08',
     cmd: 'git stash',
     title: 'git stash',
-    category: 'hold',
-    tag: 'HOLD',
-    shortDesc: 'Shelve work temporarily',
-    desc: 'Takes your uncommitted changes (both staged and unstaged) and saves them on a temporary stack, reverting your working tree to match the clean HEAD commit.',
-    whenToUse: 'When you need to urgently pull changes or switch branches to fix a bug, but your current feature code is half-finished.',
-    output: `Saved working directory and index state WIP on main: 4f9e1b2 feat(auth)...
-HEAD is now at 4f9e1b2 feat(auth)... (Working tree clean)`,
-    zonesActive: ['working', 'staging', 'stash'],
+    category: 'stage',
+    tag: 'STASH',
+    shortDesc: 'Temporarily shelve uncommitted work',
+    desc: 'Takes all your modified tracked files and staged changes, saves them on a stack of unfinished changes, and reverts your working tree to a clean HEAD state.',
+    whenToUse: 'When you need to quickly switch branches to review a bug, but your current task is half-finished and not ready to commit.',
+    output: `$ git stash push -m "WIP: auth modal layout"
+Saved working directory and index state WIP on feature/login: WIP: auth modal layout
+HEAD is now at 8a4c1f9 feat: initial commit`,
+    zonesActive: ['working', 'staging', 'local'],
     animationType: 'stash',
+    fromZone: 'working',
+    toZone: 'local',
+    stepExplain: 'Shelves all uncommitted changes into an internal vault and resets working tree to clean HEAD state.',
     flags: [
-      { flag: 'git stash', desc: 'Stash all tracked modified & staged changes' },
-      { flag: 'git stash -u', desc: 'Stash including untracked new files (`--include-untracked`)' },
-      { flag: 'git stash pop', desc: 'Apply the latest stashed changes back and remove them from the stash stack' },
-      { flag: 'git stash apply', desc: 'Apply the stashed changes back but keep them saved on the stack' },
+      { flag: 'git stash', desc: 'Save uncommitted tracked modifications to the stash list' },
+      { flag: 'git stash push -m "msg"', desc: 'Save stash with a descriptive label for easy retrieval' },
+      { flag: 'git stash pop', desc: 'Apply the latest stashed changes and remove them from the stash stack' },
       { flag: 'git stash list', desc: 'View all saved stashes with timestamps and branch names' },
-      { flag: 'git stash drop', desc: 'Delete the most recent stash entry' },
     ],
-    proTip: 'Always use `git stash -u` so you don\'t accidentally leave newly created files behind.',
+    proTip: 'Use `git stash -u` to include untracked new files into the stash as well.',
   },
   {
     id: 'git-pull',
@@ -218,50 +240,60 @@ HEAD is now at 4f9e1b2 feat(auth)... (Working tree clean)`,
     title: 'git pull',
     category: 'sync',
     tag: 'SYNC',
-    shortDesc: 'Download + integrate',
-    desc: 'Fetches from a remote repository (like GitLab or GitHub) and immediately integrates/merges those changes into the current local branch. Equivalent to `git fetch` + `git merge`.',
-    whenToUse: 'At the start of your workday or before opening a Merge Request to keep your local branch up to date with teammates.',
+    shortDesc: 'Fetch & merge changes from remote',
+    desc: 'Fetches commits from the remote repository (GitLab) and immediately merges them into the current local branch (equivalent to `git fetch` followed by `git merge`).',
+    whenToUse: 'At the start of your workday or before opening a Merge Request, to sync with teammates’ latest changes.',
     output: `$ git pull origin main
-From gitlab.company.com:project/app
+remote: Enumerating objects: 18, done.
+remote: Counting objects: 100% (18/18), done.
+remote: Compressing objects: 100% (12/12), done.
+Unpacking objects: 100% (18/18), 3.42 KiB | 1.14 MiB/s, done.
+From gitlab.company.com:workspace/project
  * branch            main     -> FETCH_HEAD
-Updating 4f9e1b2..d3a812e
-Fast-forward
- src/services/api.js | 15 ++++++++++-----
- 1 file changed, 10 insertions(+), 5 deletions(-)`,
+Updating 8a4c1f9..e4f92a1
+Fast-forward`,
     zonesActive: ['remote', 'local', 'working'],
     animationType: 'pull',
+    fromZone: 'remote',
+    toZone: 'local',
+    stepExplain: 'Streams commits from GitLab remote into local repo and merges them into your active branch.',
     flags: [
-      { flag: 'git pull', desc: 'Pull from default configured upstream remote & branch' },
-      { flag: 'git pull origin <branch>', desc: 'Pull from specific remote branch' },
-      { flag: 'git pull --rebase', desc: 'Rebase local commits on top of incoming remote commits (linear graph, no merge bubbles!)' },
-      { flag: 'git pull --ff-only', desc: 'Only pull if it can fast-forward cleanly without creating a merge commit' },
+      { flag: 'git pull', desc: 'Pull changes from the configured upstream tracking branch' },
+      { flag: 'git pull origin <branch>', desc: 'Pull explicitly from specified remote branch' },
+      { flag: 'git pull --rebase', desc: 'Rebase your local unpushed commits on top of incoming remote commits (keeps clean linear history)' },
     ],
-    proTip: 'Use `git pull --rebase` to prevent cluttering your git history with unnecessary "Merge branch main" commits.',
+    proTip: 'Use `git pull --rebase` to prevent cluttering history with unnecessary "Merge branch main" commits.',
   },
   {
     id: 'git-push',
     num: '10',
     cmd: 'git push',
     title: 'git push',
-    category: 'ship',
-    tag: 'SHIP',
-    shortDesc: 'Publish commits',
-    desc: 'Uploads your local branch commits and references to the remote repository (GitLab). Shares your work with teammates and triggers CI/CD pipelines.',
-    whenToUse: 'When you are ready to publish your local commits, open or update a Merge Request, or deploy code.',
-    output: `Enumerating objects: 7, done.
-Counting objects: 100% (7/7), done.
-Writing objects: 100% (4/4), 1.28 KiB | 1.28 MiB/s, done.
-To gitlab.company.com:project/app.git
+    category: 'sync',
+    tag: 'SYNC',
+    shortDesc: 'Upload local commits to GitLab remote',
+    desc: 'Updates remote branch references using local commits. Publishes your local commits to the shared team repository on GitLab.',
+    whenToUse: 'After making one or more commits locally, push them so teammates can review, collaborate, or trigger CI/CD pipelines.',
+    output: `$ git push origin feature/user-profile
+Enumerating objects: 14, done.
+Counting objects: 100% (14/14), done.
+Delta compression using up to 8 threads
+Compressing objects: 100% (8/8), done.
+Writing objects: 100% (8/8), 2.15 KiB | 2.15 MiB/s, done.
+Total 8 (delta 5), reused 0 (delta 0)
+To gitlab.company.com:workspace/project.git
  * [new branch]      feature/user-profile -> feature/user-profile`,
     zonesActive: ['local', 'remote'],
     animationType: 'push',
+    fromZone: 'local',
+    toZone: 'remote',
+    stepExplain: 'Uploads new commit objects and updates the branch ref on the GitLab remote server.',
     flags: [
-      { flag: 'git push', desc: 'Push current branch to configured remote upstream' },
-      { flag: 'git push -u origin <branch>', desc: 'Push AND set upstream tracking (only needed the very first time)' },
-      { flag: 'git push origin --tags', desc: 'Push all local git tags (version releases) to the remote' },
-      { flag: 'git push --force-with-lease', desc: 'Safer force push: overwrites remote only if no one else pushed new commits in between' },
+      { flag: 'git push', desc: 'Push commits to the configured upstream branch' },
+      { flag: 'git push -u origin <branch>', desc: 'Push and establish upstream tracking association for the first time' },
+      { flag: 'git push --force-with-lease', desc: 'Safe force push that verifies nobody else pushed in the meantime' },
     ],
-    proTip: 'Never use plain `git push --force` on shared branches. Always use `git push --force-with-lease`!',
+    proTip: 'Never use plain `git push --force`. Always use `git push --force-with-lease` to prevent overwriting teammates’ work.',
   },
   {
     id: 'git-diff',
@@ -270,26 +302,29 @@ To gitlab.company.com:project/app.git
     title: 'git diff',
     category: 'check',
     tag: 'DIFF',
-    shortDesc: 'Inspect file differences',
-    desc: 'Shows changes between commits, commit and working tree, or between staged and unstaged files line-by-line with additions and deletions.',
-    whenToUse: 'Before staging with `git add` to review your code edits, or to compare two branches.',
-    output: `diff --git a/src/App.jsx b/src/App.jsx
-index e69de29..4f9e1b2 100644
+    shortDesc: 'Inspect line-by-line file changes',
+    desc: 'Shows changes between the working directory and staging area, between commits, or between branches using unified diff format.',
+    whenToUse: 'Review every single line of code you wrote before running `git add` or `git commit`.',
+    output: `$ git diff
+diff --git a/src/App.jsx b/src/App.jsx
+index 92d8f1e..e7b4a2c 100644
 --- a/src/App.jsx
 +++ b/src/App.jsx
-@@ -10,3 +10,4 @@ export default function App() {
--  const [token, setToken] = useState('');
-+  const [token, setToken] = useState(sessionToken);
-+  const [authReady, setAuthReady] = useState(true);`,
+@@ -14,3 +14,5 @@ export default function App() {
+-  const [user, setUser] = useState(null);
++  const [user, setUser] = useState(() => loadCachedUser());
++  const [token, setToken] = useState(getStoredToken());`,
     zonesActive: ['working', 'staging'],
     animationType: 'diff',
+    fromZone: 'working',
+    toZone: 'staging',
+    stepExplain: 'Compares text differences line-by-line with additions (+) and deletions (-).',
     flags: [
-      { flag: 'git diff', desc: 'Show differences between working tree and staging area' },
-      { flag: 'git diff --staged', desc: 'Show differences between staging area and last commit (what will be committed)' },
-      { flag: 'git diff branch1..branch2', desc: 'Compare differences between two branches' },
-      { flag: 'git diff --stat', desc: 'Summary of changed files with insertion/deletion counts' },
+      { flag: 'git diff', desc: 'Show unstaged changes in working tree vs staging area' },
+      { flag: 'git diff --staged', desc: 'Show staged changes (what will be included in the next commit)' },
+      { flag: 'git diff branchA..branchB', desc: 'Compare entire commit diff between two branches' },
     ],
-    proTip: 'Always run `git diff --staged` before committing to do a self-code-review of your changes!',
+    proTip: 'Use `git diff --staged` right before committing to do a final self-code-review.',
   },
   {
     id: 'git-subtree',
@@ -298,9 +333,9 @@ index e69de29..4f9e1b2 100644
     title: 'git subtree',
     category: 'advanced',
     tag: 'SUBTREE',
-    shortDesc: 'Sync sub-project repository',
-    desc: 'Embeds another repository as a sub-directory within your project while maintaining full Git history and enabling two-way sync (pull updates & push fixes).',
-    whenToUse: 'In modular web architectures (like shared base clients or mono-repo sub-packages) where multiple apps share one common base core.',
+    shortDesc: 'Sync sub-project repository inside repo',
+    desc: 'Embeds an external repository as a sub-directory inside your project while keeping full commit history and enabling two-way sync (pull updates & push fixes).',
+    whenToUse: 'In modular multi-bank web architectures where multiple bank projects share one common base client or design system.',
     output: `$ git subtree pull --prefix=projects/base-client base-remote main --squash
 From gitlab.company.com:fonebank/banksmart-client-web
  * branch            main     -> FETCH_HEAD
@@ -309,12 +344,15 @@ Squashed commit of the following:
 Merge made by the 'ort' strategy.`,
     zonesActive: ['local', 'remote', 'working'],
     animationType: 'subtree',
+    fromZone: 'remote',
+    toZone: 'working',
+    stepExplain: 'Synchronizes embedded sub-directory commits with the upstream base repository.',
     flags: [
       { flag: 'git subtree add --prefix=<dir> <url> <branch> --squash', desc: 'Add a new subtree repository at the given sub-directory' },
       { flag: 'git subtree pull --prefix=<dir> <url> <branch> --squash', desc: 'Pull and merge updates from the upstream base repository' },
-      { flag: 'git subtree push --prefix=<dir> <url> <branch>', desc: 'Push local fixes from the subtree folder back to the upstream base' },
+      { flag: 'git subtree push --prefix=<dir> <url> <branch>', desc: 'Push local fixes from the subtree folder back to upstream base' },
     ],
-    proTip: 'Always use `--squash` on subtree pull/add to prevent thousands of external commits from bloating your application history.',
+    proTip: 'Always use `--squash` on subtree pull to prevent external commits from bloating your application history.',
   },
 ];
 
@@ -329,13 +367,113 @@ const CATEGORIES = [
   { id: 'advanced', label: 'Subtree & Advanced' },
 ];
 
+const WORKFLOW_RECIPES = [
+  {
+    id: 'subtree-sync',
+    title: '🚀 Subtree Sync Workflow (Base ➔ Bank Repo)',
+    desc: 'How to safely pull shared base client updates into a bank-specific repo without breaking custom bank code.',
+    steps: [
+      {
+        step: 1,
+        title: 'Check working tree status',
+        cmd: 'git status',
+        explain: 'Ensure your working directory is clean before syncing subtrees.',
+      },
+      {
+        step: 2,
+        title: 'Pull latest updates from base repository',
+        cmd: 'git subtree pull --prefix=projects/base-client https://gitlab.com/fonebank/banksmart-client-web.git main --squash',
+        explain: 'Fetches base updates and merges them as a single clean squashed commit into projects/base-client.',
+      },
+      {
+        step: 3,
+        title: 'Review diff & test build',
+        cmd: 'git diff HEAD~1 && npm run build',
+        explain: 'Verify the squashed changes and confirm no regressions in your bank project.',
+      },
+      {
+        step: 4,
+        title: 'Push updated repo to GitLab',
+        cmd: 'git push origin main',
+        explain: 'Upload the synchronized subtree commit to your bank repository remote.',
+      },
+    ],
+  },
+  {
+    id: 'feature-mr',
+    title: '🔀 Feature Branch to Merge Request (Daily Standard)',
+    desc: 'The best-practice GitLab flow from starting a new feature to merge request approval.',
+    steps: [
+      {
+        step: 1,
+        title: 'Create & switch to feature branch',
+        cmd: 'git switch -c feature/user-profile',
+        explain: 'Creates an isolated branch off the latest main.',
+      },
+      {
+        step: 2,
+        title: 'Stage and commit your work',
+        cmd: 'git add . && git commit -m "feat(user): add profile settings page"',
+        explain: 'Group logical changes into clean, descriptive commits.',
+      },
+      {
+        step: 3,
+        title: 'Push and set upstream tracking',
+        cmd: 'git push -u origin feature/user-profile',
+        explain: 'Uploads branch to GitLab and outputs the direct link to open a Merge Request.',
+      },
+      {
+        step: 4,
+        title: 'Review & merge via gitCheckout MR Drawer',
+        cmd: '# Click "MRs" in gitCheckout top bar or project card to review & accept!',
+        explain: 'Inspect commit diffs, approvals, and merge directly inside gitCheckout.',
+      },
+    ],
+  },
+  {
+    id: 'undo-mistakes',
+    title: '🚨 Undoing Mistakes (Without Panic)',
+    desc: 'Quick reference for undoing actions safely depending on what stage your changes are in.',
+    steps: [
+      {
+        step: 1,
+        title: 'Discard unstaged changes in a file',
+        cmd: 'git restore src/App.jsx',
+        explain: 'Reverts the working copy of a file back to the last commit (discards unstaged edits).',
+      },
+      {
+        step: 2,
+        title: 'Unstage a staged file (keep your code)',
+        cmd: 'git restore --staged src/App.jsx',
+        explain: 'Removes file from staging index so it won\'t be committed, but preserves your edits in file.',
+      },
+      {
+        step: 3,
+        title: 'Undo last local commit (keep changes as staged)',
+        cmd: 'git reset --soft HEAD~1',
+        explain: 'Uncommits the latest commit, leaving all modified code safely staged in your editor.',
+      },
+      {
+        step: 4,
+        title: 'Revert a commit already pushed to GitLab',
+        cmd: 'git revert <commit-sha>',
+        explain: 'Creates a new inverse commit that safely undoes the previous commit without rewriting history.',
+      },
+    ],
+  },
+];
+
 export default function GitCheatsheetModal({ isOpen, onClose }) {
+  const [activeTab, setActiveTab] = useState('simulator'); // 'simulator', 'graph', 'workflows', 'cheatsheet'
   const [selectedCmdIndex, setSelectedCmdIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
   const [copiedCmd, setCopiedCmd] = useState(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [animStep, setAnimStep] = useState(0); // 0, 1, 2 for animated progress stages
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [animProgress, setAnimProgress] = useState(0); // 0 to 100 for continuous smooth flow
+  const [animStep, setAnimStep] = useState(1); // Step 1, 2, 3
+  const [simSpeed, setSimSpeed] = useState(1); // 1x or 2x
+  const animFrameRef = useRef(null);
   const autoPlayTimerRef = useRef(null);
 
   const activeCmd = GIT_COMMANDS[selectedCmdIndex] || GIT_COMMANDS[0];
@@ -353,30 +491,39 @@ export default function GitCheatsheetModal({ isOpen, onClose }) {
     return matchCategory && matchQuery;
   });
 
-  // Cycle animation steps for visual feedback
+  // Continuous animation progress loop
   useEffect(() => {
-    setAnimStep(0);
-    const t1 = setTimeout(() => setAnimStep(1), 300);
-    const t2 = setTimeout(() => setAnimStep(2), 900);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
+    let start = performance.now();
+    const duration = 3000 / simSpeed;
+
+    const tick = (now) => {
+      const elapsed = (now - start) % duration;
+      const progress = elapsed / duration;
+      setAnimProgress(progress * 100);
+
+      if (progress < 0.33) {
+        setAnimStep(1);
+      } else if (progress < 0.66) {
+        setAnimStep(2);
+      } else {
+        setAnimStep(3);
+      }
+
+      if (isPlaying) {
+        animFrameRef.current = requestAnimationFrame(tick);
+      }
     };
-  }, [selectedCmdIndex]);
 
-  // Handle Autoplay walkthrough
-  useEffect(() => {
     if (isPlaying) {
-      autoPlayTimerRef.current = setInterval(() => {
-        setSelectedCmdIndex((prev) => (prev + 1) % GIT_COMMANDS.length);
-      }, 4500);
-    } else {
-      clearInterval(autoPlayTimerRef.current);
+      animFrameRef.current = requestAnimationFrame(tick);
     }
-    return () => clearInterval(autoPlayTimerRef.current);
-  }, [isPlaying]);
 
-  // Keyboard navigation
+    return () => {
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    };
+  }, [isPlaying, selectedCmdIndex, simSpeed]);
+
+  // Handle keyboard navigation
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e) => {
@@ -386,6 +533,9 @@ export default function GitCheatsheetModal({ isOpen, onClose }) {
         setSelectedCmdIndex((prev) => Math.min(prev + 1, GIT_COMMANDS.length - 1));
       } else if (e.key === 'ArrowUp') {
         setSelectedCmdIndex((prev) => Math.max(prev - 1, 0));
+      } else if (e.key === ' ') {
+        e.preventDefault();
+        setIsPlaying((p) => !p);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -403,7 +553,29 @@ export default function GitCheatsheetModal({ isOpen, onClose }) {
 
   const handleSelectCmd = (cmd) => {
     const idx = GIT_COMMANDS.findIndex((c) => c.id === cmd.id);
-    if (idx !== -1) setSelectedCmdIndex(idx);
+    if (idx !== -1) {
+      setSelectedCmdIndex(idx);
+      setAnimProgress(0);
+      setAnimStep(1);
+    }
+  };
+
+  const handleStepForward = () => {
+    setIsPlaying(false);
+    setAnimStep((prev) => (prev % 3) + 1);
+    setAnimProgress(((animStep % 3) + 1) * 33);
+  };
+
+  const handleStepBackward = () => {
+    setIsPlaying(false);
+    setAnimStep((prev) => (prev === 1 ? 3 : prev - 1));
+    setAnimProgress((prev === 1 ? 3 : prev - 1) * 33);
+  };
+
+  const handleRestartAnim = () => {
+    setAnimProgress(0);
+    setAnimStep(1);
+    setIsPlaying(true);
   };
 
   return (
@@ -413,418 +585,673 @@ export default function GitCheatsheetModal({ isOpen, onClose }) {
         <div className="git-guide-header">
           <div className="git-guide-header-left">
             <div className="git-guide-badge-row">
-              <span className="git-guide-mono-tag">&gt;_ DEVELOPER FIELD GUIDE</span>
-              <span className="git-guide-pill-red">ESSENTIAL GIT</span>
+              <span className="git-guide-mono-tag">&gt;_ INTERACTIVE GIT VISUALIZER</span>
+              <span className="git-guide-pill-red">ANIMATED WORKFLOW</span>
             </div>
             <div className="git-guide-title-row">
               <span className="git-guide-logo-icon">
                 <GitLogoIcon size={24} />
               </span>
               <h2 className="git-guide-title">
-                10+ GIT COMMANDS <span className="git-guide-subtext">EVERY DEVELOPER SHOULD MASTER</span>
+                Visual Git Guide <span className="git-guide-subtext">&amp; Architecture Simulator</span>
               </h2>
             </div>
           </div>
 
-          <div className="git-guide-header-actions">
+          <div className="git-guide-nav-tabs">
             <button
               type="button"
-              className={`btn btn-toggle-autoplay ${isPlaying ? 'playing' : ''}`}
-              onClick={() => setIsPlaying(!isPlaying)}
-              title={isPlaying ? 'Pause auto-walkthrough' : 'Auto-play command walkthrough'}
+              className={`git-tab-btn ${activeTab === 'simulator' ? 'active' : ''}`}
+              onClick={() => setActiveTab('simulator')}
             >
-              {isPlaying ? (
-                <>
-                  <PauseIcon size={12} /> Pause Guide
-                </>
-              ) : (
-                <>
-                  <PlayIcon size={12} /> Auto-Walkthrough
-                </>
-              )}
+              <RocketIcon size={14} /> Interactive Simulator
             </button>
-
             <button
               type="button"
-              className="modal-close-btn"
-              onClick={onClose}
-              title="Close guide (Esc)"
+              className={`git-tab-btn ${activeTab === 'graph' ? 'active' : ''}`}
+              onClick={() => setActiveTab('graph')}
             >
-              &times;
+              <GitBranchIcon size={14} /> Commit Tree &amp; DAG
+            </button>
+            <button
+              type="button"
+              className={`git-tab-btn ${activeTab === 'workflows' ? 'active' : ''}`}
+              onClick={() => setActiveTab('workflows')}
+            >
+              <LayersIcon size={14} /> Real-World Recipes
+            </button>
+            <button
+              type="button"
+              className={`git-tab-btn ${activeTab === 'cheatsheet' ? 'active' : ''}`}
+              onClick={() => setActiveTab('cheatsheet')}
+            >
+              <BookIcon size={14} /> Cheatsheet Table
             </button>
           </div>
+
+          <button type="button" className="modal-close-btn" onClick={onClose} title="Close guide (Esc)">
+            &times;
+          </button>
         </div>
 
-        {/* SEARCH & CATEGORY FILTER BAR */}
-        <div className="git-guide-filter-bar">
-          <div className="git-guide-search-wrap">
-            <SearchIcon size={13} className="search-icon" />
-            <input
-              type="text"
-              placeholder="Search git commands (e.g. commit, merge, stash, subtree)..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="git-guide-search-input"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                className="search-clear"
-                onClick={() => setSearchQuery('')}
-              >
-                &times;
-              </button>
-            )}
-          </div>
-
-          <div className="git-guide-category-pills">
-            {CATEGORIES.map((cat) => (
-              <button
-                key={cat.id}
-                type="button"
-                className={`git-guide-cat-pill ${activeCategory === cat.id ? 'active' : ''}`}
-                onClick={() => setActiveCategory(cat.id)}
-              >
-                {cat.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* MAIN TWO-COLUMN WORKSPACE */}
-        <div className="git-guide-body-layout">
-          {/* LEFT COLUMN: COMMAND INDEX LIST */}
-          <div className="git-guide-sidebar">
-            <div className="git-guide-list">
-              {filteredCommands.length === 0 && (
-                <div className="tab-empty" style={{ padding: '30px 16px' }}>
-                  No commands match &ldquo;{searchQuery}&rdquo;
-                </div>
-              )}
-              {filteredCommands.map((cmd) => {
-                const isSelected = activeCmd.id === cmd.id;
-                return (
-                  <div
-                    key={cmd.id}
-                    className={`git-guide-cmd-item ${isSelected ? 'selected' : ''}`}
-                    onClick={() => handleSelectCmd(cmd)}
-                  >
-                    <div className="cmd-item-left">
-                      <span className="cmd-item-num">{cmd.num}</span>
-                      <div className="cmd-item-text-wrap">
-                        <div className="cmd-item-title-row">
-                          <span className="cmd-item-cmd">$ {cmd.cmd}</span>
-                        </div>
-                        <span className="cmd-item-desc">{cmd.shortDesc.toUpperCase()}</span>
-                      </div>
-                    </div>
-                    <span className={`cmd-item-tag ${cmd.category}`}>{cmd.tag}</span>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* FOOTER BREADCRUMB */}
-            <div className="git-guide-sidebar-foot">
-              <span className="foot-workflow-label">WORKING TREE &gt; STAGING &gt; LOCAL &gt; REMOTE</span>
-              <span className="foot-step-counter">
-                {activeCmd.num} / {String(GIT_COMMANDS.length).padStart(2, '0')}
-              </span>
-            </div>
-          </div>
-
-          {/* RIGHT COLUMN: INTERACTIVE VISUAL SIMULATOR & EXPLANATION */}
-          <div className="git-guide-viewer-area">
-            {/* TERMINAL DISPLAY BOX */}
-            <div className="git-terminal-card">
-              <div className="terminal-topbar">
-                <div className="terminal-dots">
-                  <span className="dot dot-red" />
-                  <span className="dot dot-yellow" />
-                  <span className="dot dot-green" />
-                </div>
-                <span className="terminal-title">
-                  <TerminalIcon size={12} /> REPOSITORY TERMINAL
-                </span>
-                <div className="terminal-actions">
-                  <button
-                    type="button"
-                    className="btn-terminal-copy"
-                    onClick={() => handleCopy(activeCmd.cmd, 'cmd-main')}
-                    title="Copy command to clipboard"
-                  >
-                    {copiedCmd === 'cmd-main' ? (
-                      <>
-                        <CheckIcon size={11} /> Copied!
-                      </>
-                    ) : (
-                      <>
-                        <CopyIcon size={11} /> Copy Command
-                      </>
-                    )}
+        {/* TAB 1: INTERACTIVE SIMULATOR */}
+        {activeTab === 'simulator' && (
+          <>
+            {/* SEARCH & FILTER BAR */}
+            <div className="git-guide-filter-bar">
+              <div className="git-guide-search-wrap">
+                <SearchIcon size={13} className="search-icon" />
+                <input
+                  type="text"
+                  placeholder="Search git commands (e.g. commit, merge, stash, subtree)..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="git-guide-search-input"
+                />
+                {searchQuery && (
+                  <button type="button" className="search-clear" onClick={() => setSearchQuery('')}>
+                    &times;
                   </button>
-                  <button
-                    type="button"
-                    className="btn-terminal-replay"
-                    onClick={() => {
-                      setAnimStep(0);
-                      setTimeout(() => setAnimStep(1), 250);
-                      setTimeout(() => setAnimStep(2), 700);
-                    }}
-                    title="Replay animation simulation"
-                  >
-                    <RefreshIcon size={11} /> Replay
-                  </button>
-                </div>
+                )}
               </div>
 
-              <div className="terminal-body">
-                <div className="terminal-prompt-line">
-                  <span className="term-prompt">$</span>
-                  <span className="term-cmd">{activeCmd.cmd}</span>
-                  <span className="term-cursor" />
-                </div>
-                <div className="terminal-subline">{activeCmd.shortDesc.toUpperCase()}</div>
-                <div className="terminal-progress-bar">
-                  <div
-                    className="terminal-progress-fill"
-                    style={{
-                      width: animStep === 0 ? '25%' : animStep === 1 ? '70%' : '100%',
-                    }}
-                  />
-                </div>
-                <pre className="terminal-output-log">{activeCmd.output}</pre>
+              <div className="git-guide-category-pills">
+                {CATEGORIES.map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    className={`git-guide-cat-pill ${activeCategory === cat.id ? 'active' : ''}`}
+                    onClick={() => setActiveCategory(cat.id)}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* INTERACTIVE WORKFLOW CANVAS (4 ZONES) */}
-            <div className="git-visual-canvas-card">
-              <div className="visual-canvas-header">
-                <span className="canvas-title">
-                  <LayersIcon size={13} /> GIT ARCHITECTURE &amp; DATA FLOW
-                </span>
-                <span className="canvas-state-indicator">
-                  Active Zones:{' '}
-                  <strong>{activeCmd.zonesActive.map((z) => z.toUpperCase()).join(' ➔ ')}</strong>
-                </span>
-              </div>
-
-              <div className="git-zones-grid">
-                {/* ZONE 1: WORKING TREE */}
-                <div
-                  className={`git-zone-box zone-working ${activeCmd.zonesActive.includes('working') ? 'active-zone' : ''}`}
-                >
-                  <div className="zone-head">
-                    <span className="zone-name">WORKING TREE</span>
-                    <span className="zone-sub">Local filesystem files</span>
-                  </div>
-                  <div className="zone-content">
-                    <div
-                      className={`file-token ${activeCmd.animationType === 'add' && animStep >= 1 ? 'token-moving-out' : ''} ${activeCmd.animationType === 'status' ? 'token-modified' : ''}`}
-                    >
-                      <FileCodeIcon size={12} />
-                      <span>App.jsx</span>
-                      <span className="file-flag-pill">MODIFIED</span>
+            {/* MAIN 2-COLUMN SIMULATOR WORKSPACE */}
+            <div className="git-guide-body-layout">
+              {/* LEFT COLUMN: COMMAND SELECTOR LIST */}
+              <div className="git-guide-sidebar">
+                <div className="git-guide-list">
+                  {filteredCommands.length === 0 && (
+                    <div className="tab-empty" style={{ padding: '30px 16px' }}>
+                      No commands match &ldquo;{searchQuery}&rdquo;
                     </div>
-                    <div
-                      className={`file-token ${activeCmd.animationType === 'add' && animStep >= 1 ? 'token-moving-out' : ''} ${activeCmd.animationType === 'status' ? 'token-untracked' : ''}`}
-                    >
-                      <FileCodeIcon size={12} />
-                      <span>api.js</span>
-                      <span className="file-flag-pill">UNTRACKED</span>
-                    </div>
-                    {activeCmd.animationType === 'init' && (
-                      <div className="init-folder-pill">
-                        <span>.git/ created</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* ZONE 2: STAGING AREA (INDEX) */}
-                <div
-                  className={`git-zone-box zone-staging ${activeCmd.zonesActive.includes('staging') ? 'active-zone' : ''}`}
-                >
-                  <div className="zone-head">
-                    <span className="zone-name">STAGING AREA</span>
-                    <span className="zone-sub">Index / Prepared snapshot</span>
-                  </div>
-                  <div className="zone-content">
-                    {(activeCmd.animationType === 'add' ||
-                      activeCmd.animationType === 'commit' ||
-                      activeCmd.animationType === 'diff') ? (
+                  )}
+                  {filteredCommands.map((cmd) => {
+                    const isSelected = activeCmd.id === cmd.id;
+                    return (
                       <div
-                        className={`staged-group ${activeCmd.animationType === 'commit' && animStep >= 1 ? 'token-committed' : 'token-staged-pulse'}`}
+                        key={cmd.id}
+                        className={`git-guide-cmd-item ${isSelected ? 'selected' : ''}`}
+                        onClick={() => handleSelectCmd(cmd)}
                       >
-                        <div className="staged-file-item">
-                          <CheckIcon size={11} className="staged-icon" />
-                          <span>App.jsx</span>
-                          <span className="stage-badge">+42 -3</span>
-                        </div>
-                        <div className="staged-file-item">
-                          <CheckIcon size={11} className="staged-icon" />
-                          <span>api.js</span>
-                          <span className="stage-badge">new</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="zone-empty-placeholder">
-                        {activeCmd.animationType === 'stash'
-                          ? 'Changes shelved to stash'
-                          : 'Staged changes ready to commit'}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* ZONE 3: LOCAL REPOSITORY (COMMIT GRAPH) */}
-                <div
-                  className={`git-zone-box zone-local ${activeCmd.zonesActive.includes('local') ? 'active-zone' : ''}`}
-                >
-                  <div className="zone-head">
-                    <span className="zone-name">LOCAL REPOSITORY</span>
-                    <span className="zone-sub">Commit history graph &amp; refs</span>
-                  </div>
-                  <div className="zone-content local-graph-content">
-                    {/* Visual Commit Graph */}
-                    <div className="mini-commit-graph">
-                      <div className="graph-node node-root" title="Root commit (c1)">
-                        <span className="node-dot" />
-                        <span className="node-sha">c1 (root)</span>
-                      </div>
-                      <div className="graph-connector" />
-                      <div className="graph-node node-mid" title="Previous commit (c2)">
-                        <span className="node-dot" />
-                        <span className="node-sha">c2</span>
-                      </div>
-                      <div className="graph-connector" />
-                      <div
-                        className={`graph-node node-head ${activeCmd.animationType === 'commit' ? 'node-new-pop' : ''}`}
-                        title="Latest commit (c3 / HEAD)"
-                      >
-                        <span className="node-dot dot-head" />
-                        <span className="node-sha">
-                          {activeCmd.animationType === 'commit' ? 'c3 (NEW)' : 'c3'}
-                        </span>
-                        <span className="head-badge-pill">HEAD ➔ main</span>
-                      </div>
-
-                      {/* Feature branch line if branching / merging */}
-                      {(activeCmd.animationType === 'branch' ||
-                        activeCmd.animationType === 'switch' ||
-                        activeCmd.animationType === 'merge') && (
-                        <div
-                          className={`feature-branch-line ${activeCmd.animationType === 'merge' ? 'branch-merged' : ''}`}
-                        >
-                          <div className="branch-split-curve" />
-                          <div className="feature-node">
-                            <span className="node-dot dot-feature" />
-                            <span className="feature-branch-pill">feature/user-profile</span>
+                        <div className="cmd-item-left">
+                          <span className="cmd-item-num">{cmd.num}</span>
+                          <div className="cmd-item-text-wrap">
+                            <div className="cmd-item-title-row">
+                              <span className="cmd-item-cmd">$ {cmd.cmd}</span>
+                            </div>
+                            <span className="cmd-item-desc">{cmd.shortDesc.toUpperCase()}</span>
                           </div>
                         </div>
-                      )}
+                        <span className={`cmd-item-tag ${cmd.category}`}>{cmd.tag}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="git-guide-sidebar-foot">
+                  <span className="foot-workflow-label">WORKING ➔ STAGING ➔ LOCAL ➔ REMOTE</span>
+                  <span className="foot-step-counter">
+                    {activeCmd.num} / {String(GIT_COMMANDS.length).padStart(2, '0')}
+                  </span>
+                </div>
+              </div>
+
+              {/* RIGHT COLUMN: INTERACTIVE VISUAL ENGINE & CANVA */}
+              <div className="git-guide-viewer-area">
+                {/* INTERACTIVE STAGE & ANIMATED FLOW CANVAS */}
+                <div className="git-sim-stage-card">
+                  {/* STAGE CONTROLS */}
+                  <div className="stage-control-bar">
+                    <div className="stage-control-left">
+                      <button
+                        type="button"
+                        className="btn-sim-control"
+                        onClick={() => setIsPlaying(!isPlaying)}
+                        title={isPlaying ? 'Pause simulation (Space)' : 'Play simulation (Space)'}
+                      >
+                        {isPlaying ? <PauseIcon size={13} /> : <PlayIcon size={13} />}
+                        <span>{isPlaying ? 'Pause' : 'Play'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-sim-control"
+                        onClick={handleRestartAnim}
+                        title="Restart simulation"
+                      >
+                        <RefreshIcon size={13} />
+                        <span>Replay</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-sim-control"
+                        onClick={handleStepForward}
+                        title="Step Forward"
+                      >
+                        <span>Step ➔</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn-sim-speed ${simSpeed === 2 ? 'active' : ''}`}
+                        onClick={() => setSimSpeed(simSpeed === 1 ? 2 : 1)}
+                        title="Toggle speed (1x / 2x)"
+                      >
+                        {simSpeed}x Speed
+                      </button>
+                    </div>
+
+                    <div className="stage-current-action">
+                      <span className="action-pill">
+                        RUNNING: <strong>{activeCmd.cmd}</strong>
+                      </span>
+                      <span className="step-indicator">
+                        Step {animStep} / 3: {activeCmd.stepExplain}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 4-ZONE ARCHITECTURE VISUALIZATION WITH ANIMATED FLOW PATHS */}
+                  <div className="git-4zones-canvas">
+                    {/* ZONE 1: WORKING TREE */}
+                    <div
+                      className={`canvas-zone-col zone-working ${activeCmd.zonesActive.includes('working') ? 'active-zone' : ''}`}
+                    >
+                      <div className="zone-header">
+                        <span className="zone-tag">ZONE 1</span>
+                        <h4 className="zone-title">Working Tree</h4>
+                        <span className="zone-sub">Local filesystem files</span>
+                      </div>
+                      <div className="zone-body">
+                        <div
+                          className={`animated-file-card ${activeCmd.animationType === 'add' && animProgress > 15 ? 'file-sliding-right' : ''}`}
+                        >
+                          <div className="file-header">
+                            <FileCodeIcon size={13} />
+                            <span>App.jsx</span>
+                          </div>
+                          <div className="file-diff-pill mod">MODIFIED (+42)</div>
+                        </div>
+
+                        <div
+                          className={`animated-file-card ${activeCmd.animationType === 'add' && animProgress > 25 ? 'file-sliding-right' : ''}`}
+                        >
+                          <div className="file-header">
+                            <FileCodeIcon size={13} />
+                            <span>auth.js</span>
+                          </div>
+                          <div className="file-diff-pill untracked">NEW UNTRACKED</div>
+                        </div>
+
+                        {activeCmd.animationType === 'init' && (
+                          <div className="pulse-action-badge">
+                            <span>.git folder initialized!</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* DYNAMIC FLOW CONNECTOR 1: Working -> Staging */}
+                    <div className="zone-flow-connector">
+                      <div className="connector-label">$ git add</div>
+                      <div className="flowing-track">
+                        <div
+                          className={`flowing-particle ${activeCmd.animationType === 'add' && isPlaying ? 'animating' : ''}`}
+                          style={{
+                            transform: `translateX(${activeCmd.animationType === 'add' ? animProgress : 0}%)`,
+                            opacity: activeCmd.animationType === 'add' ? 1 : 0.2,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* ZONE 2: STAGING AREA */}
+                    <div
+                      className={`canvas-zone-col zone-staging ${activeCmd.zonesActive.includes('staging') ? 'active-zone' : ''}`}
+                    >
+                      <div className="zone-header">
+                        <span className="zone-tag">ZONE 2</span>
+                        <h4 className="zone-title">Staging Area</h4>
+                        <span className="zone-sub">Index / Prepared snapshot</span>
+                      </div>
+                      <div className="zone-body">
+                        {activeCmd.animationType === 'add' ||
+                        activeCmd.animationType === 'commit' ||
+                        activeCmd.animationType === 'status' ||
+                        activeCmd.animationType === 'diff' ? (
+                          <div
+                            className={`staged-bundle-box ${activeCmd.animationType === 'commit' && animProgress > 30 ? 'bundle-moving-commit' : 'staged-glowing'}`}
+                          >
+                            <div className="staged-bundle-head">
+                              <CheckIcon size={12} />
+                              <span>Staged Snapshot</span>
+                            </div>
+                            <div className="staged-file-row">
+                              <span>✓ App.jsx</span>
+                              <span className="badge-plus">+42</span>
+                            </div>
+                            <div className="staged-file-row">
+                              <span>✓ auth.js</span>
+                              <span className="badge-plus">+120</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="zone-empty-hint">
+                            {activeCmd.animationType === 'stash'
+                              ? 'Changes stashed away in stash stack'
+                              : 'No staged changes in index'}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* DYNAMIC FLOW CONNECTOR 2: Staging -> Local Repo */}
+                    <div className="zone-flow-connector">
+                      <div className="connector-label">$ git commit</div>
+                      <div className="flowing-track">
+                        <div
+                          className={`flowing-particle ${activeCmd.animationType === 'commit' && isPlaying ? 'animating' : ''}`}
+                          style={{
+                            transform: `translateX(${activeCmd.animationType === 'commit' ? animProgress : 0}%)`,
+                            opacity: activeCmd.animationType === 'commit' ? 1 : 0.2,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* ZONE 3: LOCAL REPO (.git) */}
+                    <div
+                      className={`canvas-zone-col zone-local ${activeCmd.zonesActive.includes('local') ? 'active-zone' : ''}`}
+                    >
+                      <div className="zone-header">
+                        <span className="zone-tag">ZONE 3</span>
+                        <h4 className="zone-title">Local Repo (.git)</h4>
+                        <span className="zone-sub">Commit DAG history</span>
+                      </div>
+                      <div className="zone-body">
+                        <div className="dag-commit-chain">
+                          <div className="dag-node">
+                            <span className="commit-circle root">C1</span>
+                            <span className="commit-label">Init</span>
+                          </div>
+                          <div className="dag-line" />
+                          <div className="dag-node">
+                            <span className="commit-circle mid">C2</span>
+                            <span className="commit-label">Base</span>
+                          </div>
+                          <div className="dag-line" />
+                          <div
+                            className={`dag-node head ${activeCmd.animationType === 'commit' ? 'newly-created-commit' : ''}`}
+                          >
+                            <span className="commit-circle head-circle">C3</span>
+                            <span className="commit-label">HEAD ➔ main</span>
+                          </div>
+                        </div>
+
+                        {/* Branch / Merge Indicator */}
+                        {(activeCmd.animationType === 'branch' ||
+                          activeCmd.animationType === 'switch' ||
+                          activeCmd.animationType === 'merge') && (
+                          <div
+                            className={`feature-branch-preview ${activeCmd.animationType === 'merge' ? 'merged-state' : ''}`}
+                          >
+                            <div className="branch-curve" />
+                            <div className="feature-node-box">
+                              <span className="commit-circle feat">C4</span>
+                              <span className="branch-name-tag">feature/user-profile</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* DYNAMIC FLOW CONNECTOR 3: Local -> Remote */}
+                    <div className="zone-flow-connector">
+                      <div className="connector-label">
+                        {activeCmd.animationType === 'pull' ? '$ git pull ↙' : '$ git push ↗'}
+                      </div>
+                      <div className="flowing-track">
+                        <div
+                          className={`flowing-particle ${['push', 'pull', 'subtree'].includes(activeCmd.animationType) && isPlaying ? 'animating' : ''}`}
+                          style={{
+                            transform: `translateX(${['push', 'pull', 'subtree'].includes(activeCmd.animationType) ? animProgress : 0}%)`,
+                            opacity: ['push', 'pull', 'subtree'].includes(activeCmd.animationType) ? 1 : 0.2,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* ZONE 4: REMOTE GITLAB */}
+                    <div
+                      className={`canvas-zone-col zone-remote ${activeCmd.zonesActive.includes('remote') ? 'active-zone' : ''}`}
+                    >
+                      <div className="zone-header">
+                        <span className="zone-tag">ZONE 4</span>
+                        <h4 className="zone-title">GitLab Remote</h4>
+                        <span className="zone-sub">origin / upstream</span>
+                      </div>
+                      <div className="zone-body">
+                        <div className="remote-server-card">
+                          <CloudIcon size={22} className="server-icon" />
+                          <div className="server-info">
+                            <span className="server-branch">origin/main</span>
+                            <span className="server-url">gitlab.f1soft.com</span>
+                          </div>
+                        </div>
+
+                        {activeCmd.animationType === 'push' && (
+                          <div className="stream-badge push">
+                            <span className="stream-dot" />
+                            <span>Uploading commits to GitLab...</span>
+                          </div>
+                        )}
+
+                        {activeCmd.animationType === 'pull' && (
+                          <div className="stream-badge pull">
+                            <span className="stream-dot" />
+                            <span>Downloading latest team commits...</span>
+                          </div>
+                        )}
+
+                        {activeCmd.animationType === 'subtree' && (
+                          <div className="stream-badge subtree">
+                            <span>🔄 Base Subtree Synchronized!</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* ZONE 4: REMOTE REPOSITORY (ORIGIN / CLOUD) */}
-                <div
-                  className={`git-zone-box zone-remote ${activeCmd.zonesActive.includes('remote') ? 'active-zone' : ''}`}
-                >
-                  <div className="zone-head">
-                    <span className="zone-name">REMOTE REPO</span>
-                    <span className="zone-sub">GitLab origin / upstream</span>
+                {/* TERMINAL DISPLAY BOX */}
+                <div className="git-terminal-card">
+                  <div className="terminal-topbar">
+                    <div className="terminal-dots">
+                      <span className="dot dot-red" />
+                      <span className="dot dot-yellow" />
+                      <span className="dot dot-green" />
+                    </div>
+                    <span className="terminal-title">
+                      <TerminalIcon size={12} /> REPOSITORY TERMINAL OUTPUT
+                    </span>
+                    <div className="terminal-actions">
+                      <button
+                        type="button"
+                        className="btn-terminal-copy"
+                        onClick={() => handleCopy(activeCmd.cmd, 'cmd-main')}
+                        title="Copy command to clipboard"
+                      >
+                        {copiedCmd === 'cmd-main' ? (
+                          <>
+                            <CheckIcon size={11} /> Copied!
+                          </>
+                        ) : (
+                          <>
+                            <CopyIcon size={11} /> Copy Command
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
-                  <div className="zone-content remote-content">
-                    <div className="remote-cloud-badge">
-                      <CloudIcon size={20} className="cloud-icon" />
-                      <div className="remote-info">
-                        <span className="remote-title">origin/main</span>
-                        <span className="remote-url">gitlab.com/project</span>
+
+                  <div className="terminal-body">
+                    <div className="terminal-prompt-line">
+                      <span className="term-prompt">$</span>
+                      <span className="term-cmd">{activeCmd.cmd}</span>
+                      <span className="term-cursor" />
+                    </div>
+                    <div className="terminal-subline">{activeCmd.shortDesc.toUpperCase()}</div>
+                    <pre className="terminal-output-log">{activeCmd.output}</pre>
+                  </div>
+                </div>
+
+                {/* EXPLANATION & FLAGS DEEP DIVE */}
+                <div className="git-guide-detail-card">
+                  <div className="detail-section">
+                    <h4 className="detail-section-title">
+                      <BookIcon size={14} /> Description &amp; Usage
+                    </h4>
+                    <p className="detail-desc-text">{activeCmd.desc}</p>
+                    <div className="when-to-use-box">
+                      <strong className="when-label">💡 When to use:</strong>
+                      <span>{activeCmd.whenToUse}</span>
+                    </div>
+                  </div>
+
+                  {/* COMMON FLAGS & OPTIONS */}
+                  {activeCmd.flags && activeCmd.flags.length > 0 && (
+                    <div className="detail-section" style={{ marginTop: '16px' }}>
+                      <h4 className="detail-section-title">
+                        <TerminalIcon size={14} /> Common Variations &amp; Flags
+                      </h4>
+                      <div className="flags-grid">
+                        {activeCmd.flags.map((item, idx) => (
+                          <div
+                            key={idx}
+                            className="flag-card"
+                            onClick={() => handleCopy(item.flag, `flag-${idx}`)}
+                            title="Click to copy command"
+                          >
+                            <div className="flag-top">
+                              <code className="flag-code">{item.flag}</code>
+                              <button type="button" className="btn-copy-chip">
+                                {copiedCmd === `flag-${idx}` ? (
+                                  <CheckIcon size={11} />
+                                ) : (
+                                  <CopyIcon size={11} />
+                                )}
+                              </button>
+                            </div>
+                            <p className="flag-desc">{item.desc}</p>
+                          </div>
+                        ))}
                       </div>
                     </div>
+                  )}
 
-                    {activeCmd.animationType === 'push' && (
-                      <div className="packet-stream stream-push">
-                        <span className="packet-dot" />
-                        <span className="packet-dot" />
-                        <span className="packet-label">Pushing ➔ origin</span>
-                      </div>
-                    )}
+                  {/* PRO TIP */}
+                  {activeCmd.proTip && (
+                    <div className="git-guide-pro-tip">
+                      <span className="pro-tip-badge">PRO TIP</span>
+                      <p className="pro-tip-text">{activeCmd.proTip}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
 
-                    {activeCmd.animationType === 'pull' && (
-                      <div className="packet-stream stream-pull">
-                        <span className="packet-dot" />
-                        <span className="packet-dot" />
-                        <span className="packet-label">Pulling ➔ local</span>
-                      </div>
-                    )}
+        {/* TAB 2: INTERACTIVE COMMIT TREE & DAG */}
+        {activeTab === 'graph' && (
+          <div className="git-tab-content-panel">
+            <div className="graph-explainer-banner">
+              <h3>Understanding the Git Commit DAG (Directed Acyclic Graph)</h3>
+              <p>
+                In Git, branches are simply lightweight pointers to commit objects. Commits link backwards to their parent commits.
+              </p>
+            </div>
 
-                    {activeCmd.animationType === 'subtree' && (
-                      <div className="subtree-sync-badge">
-                        <span className="sync-icon">🔄</span>
-                        <span>Base Subtree Synced</span>
-                      </div>
-                    )}
+            <div className="git-dag-full-visualizer">
+              {/* MAIN BRANCH LINE */}
+              <div className="dag-branch-row">
+                <span className="branch-label main">main</span>
+                <div className="dag-timeline">
+                  <div className="timeline-node">
+                    <span className="node-bubble">c1</span>
+                    <span className="node-meta">Initial commit</span>
+                  </div>
+                  <div className="timeline-arrow">➔</div>
+                  <div className="timeline-node">
+                    <span className="node-bubble">c2</span>
+                    <span className="node-meta">Setup routing</span>
+                  </div>
+                  <div className="timeline-arrow">➔</div>
+                  <div className="timeline-node">
+                    <span className="node-bubble">c3</span>
+                    <span className="node-meta">Fix styling</span>
+                  </div>
+                  <div className="timeline-arrow">➔</div>
+                  <div className="timeline-node merge-node">
+                    <span className="node-bubble merge">c6 (Merge)</span>
+                    <span className="node-meta">Merge MR #42</span>
+                    <span className="tag-head">HEAD ➔ main</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* FEATURE BRANCH LINE */}
+              <div className="dag-branch-row feature-row">
+                <span className="branch-label feat">feature/login</span>
+                <div className="dag-timeline">
+                  <div className="timeline-spacer" />
+                  <div className="timeline-fork-curve">┌──</div>
+                  <div className="timeline-node">
+                    <span className="node-bubble feat">c4</span>
+                    <span className="node-meta">Add auth API</span>
+                  </div>
+                  <div className="timeline-arrow">➔</div>
+                  <div className="timeline-node">
+                    <span className="node-bubble feat">c5</span>
+                    <span className="node-meta">Add login form</span>
+                  </div>
+                  <div className="timeline-merge-curve">└───➔</div>
+                </div>
+              </div>
+
+              {/* SUBTREE EMBEDDED BRANCH */}
+              <div className="dag-branch-row subtree-row">
+                <span className="branch-label subtree">projects/base-client (Subtree)</span>
+                <div className="dag-timeline">
+                  <div className="timeline-node subtree">
+                    <span className="node-bubble sub">base-v2.3</span>
+                    <span className="node-meta">Base client core</span>
+                  </div>
+                  <div className="timeline-arrow">➔</div>
+                  <div className="timeline-node subtree">
+                    <span className="node-bubble sub">base-v2.4</span>
+                    <span className="node-meta">Squash merge into bank repo</span>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* EXPLANATION & FLAGS DEEP DIVE */}
-            <div className="git-guide-detail-card">
-              <div className="detail-section">
-                <h4 className="detail-section-title">
-                  <BookIcon size={14} /> Description &amp; Usage
-                </h4>
-                <p className="detail-desc-text">{activeCmd.desc}</p>
-                <div className="when-to-use-box">
-                  <strong className="when-label">💡 When to use:</strong>
-                  <span>{activeCmd.whenToUse}</span>
-                </div>
+            <div className="dag-legend-grid">
+              <div className="legend-card">
+                <strong style={{ color: '#38bdf8' }}>HEAD Pointer</strong>
+                <p>Indicates what branch/commit your working directory currently has checked out.</p>
               </div>
+              <div className="legend-card">
+                <strong style={{ color: '#a78bfa' }}>Fast-Forward Merge</strong>
+                <p>If main has not moved since you branched, main pointer simply jumps forward with no merge commit.</p>
+              </div>
+              <div className="legend-card">
+                <strong style={{ color: '#ec4899' }}>3-Way Merge Commit</strong>
+                <p>If both main and feature had new commits, a merge commit (c6) is created with 2 parent commits.</p>
+              </div>
+              <div className="legend-card">
+                <strong style={{ color: '#34d399' }}>Subtree Squash</strong>
+                <p>Squashes upstream base commits into a single commit inside your bank project subfolder.</p>
+              </div>
+            </div>
+          </div>
+        )}
 
-              {/* COMMON FLAGS & OPTIONS */}
-              {activeCmd.flags && activeCmd.flags.length > 0 && (
-                <div className="detail-section" style={{ marginTop: '16px' }}>
-                  <h4 className="detail-section-title">
-                    <TerminalIcon size={14} /> Common Variations &amp; Flags
-                  </h4>
-                  <div className="flags-grid">
-                    {activeCmd.flags.map((item, idx) => (
-                      <div
-                        key={idx}
-                        className="flag-card"
-                        onClick={() => handleCopy(item.flag, `flag-${idx}`)}
-                        title="Click to copy command"
-                      >
-                        <div className="flag-top">
-                          <code className="flag-code">{item.flag}</code>
-                          <button type="button" className="btn-copy-chip">
-                            {copiedCmd === `flag-${idx}` ? (
-                              <CheckIcon size={11} />
-                            ) : (
-                              <CopyIcon size={11} />
-                            )}
-                          </button>
+        {/* TAB 3: REAL WORLD RECIPES */}
+        {activeTab === 'workflows' && (
+          <div className="git-tab-content-panel">
+            <div className="recipes-container">
+              {WORKFLOW_RECIPES.map((recipe) => (
+                <div key={recipe.id} className="recipe-card">
+                  <div className="recipe-head">
+                    <h3>{recipe.title}</h3>
+                    <p>{recipe.desc}</p>
+                  </div>
+                  <div className="recipe-steps-list">
+                    {recipe.steps.map((s) => (
+                      <div key={s.step} className="recipe-step-item">
+                        <div className="step-num-badge">{s.step}</div>
+                        <div className="step-content-area">
+                          <div className="step-title-text">{s.title}</div>
+                          <div
+                            className="step-cmd-box"
+                            onClick={() => handleCopy(s.cmd, `recipe-${recipe.id}-${s.step}`)}
+                            title="Click to copy command"
+                          >
+                            <code>$ {s.cmd}</code>
+                            <button type="button" className="btn-copy-chip">
+                              {copiedCmd === `recipe-${recipe.id}-${s.step}` ? (
+                                <CheckIcon size={11} />
+                              ) : (
+                                <CopyIcon size={11} />
+                              )}
+                            </button>
+                          </div>
+                          <p className="step-explain-text">{s.explain}</p>
                         </div>
-                        <p className="flag-desc">{item.desc}</p>
                       </div>
                     ))}
                   </div>
                 </div>
-              )}
-
-              {/* PRO TIP */}
-              {activeCmd.proTip && (
-                <div className="git-guide-pro-tip">
-                  <span className="pro-tip-badge">PRO TIP</span>
-                  <p className="pro-tip-text">{activeCmd.proTip}</p>
-                </div>
-              )}
+              ))}
             </div>
           </div>
-        </div>
+        )}
+
+        {/* TAB 4: CHEATSHEET TABLE */}
+        {activeTab === 'cheatsheet' && (
+          <div className="git-tab-content-panel">
+            <div className="cheatsheet-table-container">
+              <table className="cheatsheet-table">
+                <thead>
+                  <tr>
+                    <th>Command</th>
+                    <th>Category</th>
+                    <th>What it does</th>
+                    <th>When to run</th>
+                    <th>Copy</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {GIT_COMMANDS.map((c) => (
+                    <tr key={c.id}>
+                      <td>
+                        <code className="table-cmd">{c.cmd}</code>
+                      </td>
+                      <td>
+                        <span className={`cmd-item-tag ${c.category}`}>{c.tag}</span>
+                      </td>
+                      <td>{c.shortDesc}</td>
+                      <td style={{ color: '#94a3b8', fontSize: '12px' }}>{c.whenToUse}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn-terminal-copy"
+                          style={{ padding: '4px 8px', fontSize: '11px' }}
+                          onClick={() => handleCopy(c.cmd, `tbl-${c.id}`)}
+                        >
+                          {copiedCmd === `tbl-${c.id}` ? 'Copied!' : 'Copy'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
