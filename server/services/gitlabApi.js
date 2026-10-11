@@ -4,9 +4,21 @@ function cleanBaseUrl(url) {
   return url.replace(/\/+$/, '');
 }
 
+async function fetchWithCause(url, options) {
+  try {
+    return await fetch(url, options);
+  } catch (err) {
+    if (err.cause) {
+      const causeMsg = err.cause.message || err.cause.code || String(err.cause);
+      err.message = `${err.message} (${causeMsg})`;
+    }
+    throw err;
+  }
+}
+
 async function gitlabGet(gitlabUrl, token, apiPath) {
   const url = `${cleanBaseUrl(gitlabUrl)}/api/v4${apiPath}`;
-  const res = await fetch(url, { headers: { 'PRIVATE-TOKEN': token } });
+  const res = await fetchWithCause(url, { headers: { 'PRIVATE-TOKEN': token } });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     const err = new Error(`GitLab API ${res.status} for ${apiPath}: ${body.slice(0, 300)}`);
@@ -18,7 +30,7 @@ async function gitlabGet(gitlabUrl, token, apiPath) {
 
 async function gitlabGetRawText(gitlabUrl, token, apiPath) {
   const url = `${cleanBaseUrl(gitlabUrl)}/api/v4${apiPath}`;
-  const res = await fetch(url, { headers: { 'PRIVATE-TOKEN': token } });
+  const res = await fetchWithCause(url, { headers: { 'PRIVATE-TOKEN': token } });
   if (!res.ok) {
     const err = new Error(`GitLab API ${res.status} for ${apiPath}`);
     err.status = res.status;
@@ -29,7 +41,7 @@ async function gitlabGetRawText(gitlabUrl, token, apiPath) {
 
 async function gitlabPost(gitlabUrl, token, apiPath, body) {
   const url = `${cleanBaseUrl(gitlabUrl)}/api/v4${apiPath}`;
-  const res = await fetch(url, {
+  const res = await fetchWithCause(url, {
     method: 'POST',
     headers: {
       'PRIVATE-TOKEN': token,
@@ -48,7 +60,7 @@ async function gitlabPost(gitlabUrl, token, apiPath, body) {
 
 async function gitlabPut(gitlabUrl, token, apiPath, body) {
   const url = `${cleanBaseUrl(gitlabUrl)}/api/v4${apiPath}`;
-  const res = await fetch(url, {
+  const res = await fetchWithCause(url, {
     method: 'PUT',
     headers: {
       'PRIVATE-TOKEN': token,
@@ -67,7 +79,7 @@ async function gitlabPut(gitlabUrl, token, apiPath, body) {
 
 async function gitlabDelete(gitlabUrl, token, apiPath) {
   const url = `${cleanBaseUrl(gitlabUrl)}/api/v4${apiPath}`;
-  const res = await fetch(url, {
+  const res = await fetchWithCause(url, {
     method: 'DELETE',
     headers: {
       'PRIVATE-TOKEN': token,
